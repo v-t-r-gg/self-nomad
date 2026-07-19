@@ -17,8 +17,10 @@ class OpenClawAdapter(RuntimeAdapter):
     name = "openclaw"
 
     def detect(self, hint: Path | None = None) -> DetectionResult:
+        profile = os.environ.get("OPENCLAW_PROFILE", "default")
+        default_name = "workspace" if profile == "default" else f"workspace-{profile}"
         workspace = hint or Path(
-            os.environ.get("OPENCLAW_WORKSPACE_DIR", Path.home() / ".openclaw/workspace")
+            os.environ.get("OPENCLAW_WORKSPACE_DIR", Path.home() / ".openclaw" / default_name)
         )
         candidates = []
         if workspace.is_dir() and any((workspace / name).exists() for name in self._markers()):
@@ -74,16 +76,33 @@ class OpenClawAdapter(RuntimeAdapter):
                     before_sha256=before,
                 )
             )
-        exclusions = []
-        if (runtime.root / "BOOTSTRAP.md").exists():
-            exclusions.append(
+        known = (
+            ("heartbeat", "HEARTBEAT.md", Fidelity.LOSSY),
+            ("startup", "BOOT.md", Fidelity.RUNTIME_OWNED),
+            ("bootstrap", "BOOTSTRAP.md", Fidelity.RUNTIME_OWNED),
+            ("canvas", "canvas", Fidelity.UNSUPPORTED),
+        )
+        exclusions = [
+            Mapping(
+                artifact=artifact,
+                source=(runtime.root / relative) if (runtime.root / relative).exists() else None,
+                fidelity=fidelity,
+                action="exclude",
+                reason="known OpenClaw workspace artifact has no canonical v0.1 mapping",
+            )
+            for artifact, relative, fidelity in known
+        ]
+        exclusions.extend(
+            [
                 Mapping(
-                    artifact="bootstrap",
-                    source=runtime.root / "BOOTSTRAP.md",
+                    artifact=artifact,
                     fidelity=Fidelity.RUNTIME_OWNED,
                     action="exclude",
+                    reason="OpenClaw state directory is outside the portable workspace boundary",
                 )
-            )
+                for artifact in ("configuration", "credentials", "sessions", "agent_databases")
+            ]
+        )
         content = repository.load_manifest().content
         for artifact, relative, fidelity in (
             ("knowledge", content.knowledge, Fidelity.UNSUPPORTED),

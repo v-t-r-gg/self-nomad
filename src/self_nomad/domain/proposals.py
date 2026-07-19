@@ -66,6 +66,8 @@ class ProposalRecord(BaseModel):
     branch: str | None = None
     proposal_commit: str | None = None
     content_digest: str | None = None
+    validated_tree: str | None = None
+    approved_tree: str | None = None
     approved_at: datetime | None = None
     approval_identifier: str | None = None
     rejection_reason: str | None = None

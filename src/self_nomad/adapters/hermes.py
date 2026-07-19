@@ -138,21 +138,28 @@ class HermesAdapter(RuntimeAdapter):
         )
 
     def _exclusions(self, runtime: RuntimeRef) -> list[Mapping]:
-        excluded: list[Mapping] = []
-        for name, fidelity in (
-            (".env", Fidelity.EXCLUDED_SENSITIVE),
-            ("state.db", Fidelity.RUNTIME_OWNED),
-        ):
-            if (runtime.root / name).exists():
-                excluded.append(
-                    Mapping(
-                        artifact=name,
-                        source=runtime.root / name,
-                        fidelity=fidelity,
-                        action="exclude",
-                    )
-                )
-        return excluded
+        known = (
+            ("credentials", ".env", Fidelity.EXCLUDED_SENSITIVE),
+            ("sessions", "state.db", Fidelity.RUNTIME_OWNED),
+            ("configuration", "config.yaml", Fidelity.RUNTIME_OWNED),
+            ("cron_jobs", "cron", Fidelity.RUNTIME_OWNED),
+            ("plugins", "plugins", Fidelity.RUNTIME_OWNED),
+            ("checkpoints", "checkpoints", Fidelity.RUNTIME_OWNED),
+            ("backups", "backups", Fidelity.RUNTIME_OWNED),
+            ("state_snapshots", "state-snapshots", Fidelity.RUNTIME_OWNED),
+            ("logs", "logs", Fidelity.RUNTIME_OWNED),
+            ("gateway_state", "gateway", Fidelity.RUNTIME_OWNED),
+        )
+        return [
+            Mapping(
+                artifact=artifact,
+                source=(runtime.root / relative) if (runtime.root / relative).exists() else None,
+                fidelity=fidelity,
+                action="exclude",
+                reason="known Hermes operational state is not portable",
+            )
+            for artifact, relative, fidelity in known
+        ]
 
     def validate(
         self, repository: SelfRepository, runtime: RuntimeRef | None = None

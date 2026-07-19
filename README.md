@@ -40,6 +40,8 @@ uv run self-nomad --repo /tmp/example propose \
   --reason "Add a curated fact" --change changes.yaml
 uv run self-nomad --repo /tmp/example validate PROPOSAL_ID
 uv run self-nomad --repo /tmp/example approve PROPOSAL_ID
+# The target branch must not be checked out in any worktree.
+git switch -c review-work
 uv run self-nomad --repo /tmp/example apply PROPOSAL_ID
 ```
 
@@ -58,6 +60,16 @@ self-nomad --repo ./my-agent restore --adapter openclaw \
 `--yes` confirms the displayed class of mutation; it never enables secret or
 session migration. Imports create proposals and do not directly change the
 active branch.
+
+Proposal validation requires a clean isolated worktree and an exact match
+between the complete committed Git tree and declared operations. Approval is
+invalidated by staged, unstaged, untracked, or committed mutation. Application
+refuses to advance a branch checked out in any worktree, avoiding stale index
+and working-directory state.
+
+Restore is transactional: self-nomad builds and verifies a complete sibling
+runtime tree, backs up affected artifacts, swaps the directory, verifies it
+again, and restores the original automatically on failure.
 
 See [docs/repository-format.md](docs/repository-format.md) for the format and
 [docs/threat-model.md](docs/threat-model.md) for the security boundary.

@@ -1,4 +1,5 @@
 import hashlib
+import re
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -20,6 +21,12 @@ class SelfRepository:
         "id_ed25519",
         "state.db",
     }
+    SECRET_PATTERNS = (
+        re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
+        re.compile(rb"github_pat_[A-Za-z0-9_]{20,}"),
+        re.compile(rb"gh[pousr]_[A-Za-z0-9_]{20,}"),
+        re.compile(rb"AKIA[0-9A-Z]{16}"),
+    )
 
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
@@ -137,6 +144,21 @@ class SelfRepository:
                             path=artifact_relative,
                         )
                     )
+                if (
+                    policy
+                    and policy.validation.scan_for_secrets
+                    and artifact_file.stat().st_size <= policy.limits.maximum_file_bytes
+                ):
+                    content = artifact_file.read_bytes()
+                    if any(pattern.search(content) for pattern in self.SECRET_PATTERNS):
+                        findings.append(
+                            Finding(
+                                severity="blocker",
+                                code="SN1302",
+                                message="high-confidence secret pattern detected",
+                                path=artifact_relative,
+                            )
+                        )
                 digest.update(artifact_relative.encode())
                 digest.update(sha256_file(artifact_file).encode())
 

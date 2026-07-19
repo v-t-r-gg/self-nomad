@@ -166,6 +166,7 @@ class ProposalService:
             raise ProposalStateError("proposal must be materialized before validation")
         if record.worktree is None:
             raise ProposalStateError("proposal worktree is missing")
+        self._verify_or_invalidate(record)
         result = SelfRepository(Path(record.worktree)).validate(strict=True)
         if not result.valid:
             raise ValidationFailedError(
@@ -173,6 +174,9 @@ class ProposalService:
             )
         record.status = ProposalStatus.VALIDATED
         record.content_digest = result.content_digest
+        record.validated_tree = self.git.tree(record.proposal_commit or "")
+        record.approved_tree = None
+        record.approved_at = None
         self.store.save(record)
         return record
 
@@ -180,7 +184,12 @@ class ProposalService:
         record = self.store.load(proposal_id)
         if record.status is not ProposalStatus.VALIDATED:
             raise ProposalStateError("proposal must be validated before approval")
+        self._verify_or_invalidate(record)
+        current_tree = self.git.tree(record.proposal_commit or "")
+        if current_tree != record.validated_tree:
+            raise ProposalStaleError("proposal tree changed after validation")
         record.status = ProposalStatus.APPROVED
+        record.approved_tree = current_tree
         record.approved_at = datetime.now(UTC)
         record.approval_identifier = identifier
         self.store.save(record)
@@ -206,9 +215,18 @@ class ProposalService:
                 record.status = ProposalStatus.STALE
                 self.store.save(record)
                 raise ProposalStaleError("target branch moved from the proposal base")
+            if proposal.target_branch in self.git.checked_out_branches():
+                raise ConflictError(
+                    "target branch is checked out; switch that worktree to another branch "
+                    "or detach HEAD"
+                )
             if not record.worktree or not record.proposal_commit or not record.content_digest:
                 raise ProposalStateError("proposal record is incomplete")
             worktree = Path(record.worktree)
+            self._verify_or_invalidate(record)
+            proposal_tree = self.git.tree(record.proposal_commit)
+            if proposal_tree != record.validated_tree or proposal_tree != record.approved_tree:
+                raise ProposalStaleError("approved proposal tree changed")
             validation = SelfRepository(worktree).validate(strict=True)
             if not validation.valid or validation.content_digest != record.content_digest:
                 raise ProposalStaleError("validated proposal contents changed")
@@ -235,12 +253,20 @@ class ProposalService:
                 ],
             }
             atomic_write_text(audit_path, json.dumps(audit, indent=2, sort_keys=True) + "\n")
-            final_commit = self.git.commit_all(
+            audit_relative = audit_path.relative_to(worktree).as_posix()
+            final_commit = self.git.commit_paths(
                 worktree,
                 f"self-nomad(audit): apply {proposal.id}\n\n"
                 f"Self-Nomad-Proposal: {proposal.id}\n"
                 f"Self-Nomad-Base: {proposal.base_commit}",
+                [audit_relative],
             )
+            if self.git.changed_paths(record.proposal_commit, final_commit) != {
+                audit_relative: "A"
+            }:
+                raise ProposalStaleError(
+                    "finalization commit contains changes beyond its audit record"
+                )
             try:
                 self.git.update_ref(proposal.target_branch, final_commit, proposal.base_commit)
             except Exception:
@@ -251,6 +277,37 @@ class ProposalService:
             record.applied_commit = final_commit
             self.store.save(record)
             return record
+
+    def _verify_declared_tree(self, record: ProposalRecord) -> None:
+        if not record.worktree or not record.proposal_commit:
+            raise ProposalStateError("proposal record is incomplete")
+        worktree = Path(record.worktree)
+        actual_head = self.git.run("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+        if actual_head != record.proposal_commit:
+            raise ProposalStaleError("worktree HEAD changed after materialization")
+        if not self.git.is_clean(worktree):
+            raise ProposalStaleError("proposal worktree has staged, unstaged, or untracked changes")
+        expected_status = {"add": "A", "replace": "M", "delete": "D"}
+        expected = {
+            operation.path: expected_status[operation.kind]
+            for operation in record.proposal.operations
+        }
+        actual = self.git.changed_paths(record.proposal.base_commit, record.proposal_commit)
+        if actual != expected:
+            raise ProposalStaleError("proposal commit does not exactly match declared operations")
+
+    def _verify_or_invalidate(self, record: ProposalRecord) -> None:
+        try:
+            self._verify_declared_tree(record)
+        except ProposalStaleError:
+            record.status = ProposalStatus.MATERIALIZED
+            record.content_digest = None
+            record.validated_tree = None
+            record.approved_tree = None
+            record.approved_at = None
+            record.approval_identifier = None
+            self.store.save(record)
+            raise
 
     def cleanup(self, proposal_id: UUID) -> None:
         record = self.store.load(proposal_id)

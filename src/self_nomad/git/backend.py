@@ -29,7 +29,7 @@ class GitBackend:
         )
         try:
             completed = subprocess.run(
-                ["git", *arguments],
+                ["git", "-c", "core.hooksPath=/dev/null", *arguments],
                 cwd=cwd or self.root,
                 env=environment,
                 check=False,
@@ -57,6 +57,34 @@ class GitBackend:
         self.run("add", "-A", "--", ".", cwd=worktree)
         self.run("commit", "--quiet", "-m", message, cwd=worktree)
         return self.run("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+
+    def commit_paths(self, worktree: Path, message: str, paths: list[str]) -> str:
+        self.run("add", "--", *paths, cwd=worktree)
+        self.run("commit", "--quiet", "-m", message, "--", *paths, cwd=worktree)
+        return self.run("rev-parse", "HEAD", cwd=worktree).stdout.strip()
+
+    def tree(self, commit: str) -> str:
+        return self.run("rev-parse", f"{commit}^{{tree}}").stdout.strip()
+
+    def is_clean(self, worktree: Path) -> bool:
+        return not self.run(
+            "status", "--porcelain=v1", "--untracked-files=all", cwd=worktree
+        ).stdout
+
+    def changed_paths(self, base: str, commit: str) -> dict[str, str]:
+        output = self.run("diff-tree", "--no-commit-id", "--name-status", "-r", base, commit).stdout
+        result: dict[str, str] = {}
+        for line in output.splitlines():
+            status, path = line.split("\t", 1)
+            result[path] = status
+        return result
+
+    def checked_out_branches(self) -> set[str]:
+        branches: set[str] = set()
+        for line in self.run("worktree", "list", "--porcelain").stdout.splitlines():
+            if line.startswith("branch refs/heads/"):
+                branches.add(line.removeprefix("branch refs/heads/"))
+        return branches
 
     def update_ref(self, branch: str, new: str, expected_old: str) -> None:
         self.run("update-ref", f"refs/heads/{branch}", new, expected_old)

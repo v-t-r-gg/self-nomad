@@ -16,6 +16,12 @@ replacement. Replaced runtime files are copied to restrictive local state
 before writes. Import staging is converted into typed, hash-bound proposal
 operations rather than modifying the active checkout.
 
+Managed Git commands override `core.hooksPath` with `/dev/null`; repository and
+global hooks therefore do not execute. Git clean/smudge/process filters remain
+part of the user's trusted Git configuration. A repository using filters must
+trust those filters to transform worktree bytes; proposal approval binds the
+resulting complete Git tree and exact declared diff, not the filter program.
+
 Git is an audit log, not a security boundary. Git history retains deleted
 content. Structural validation cannot establish that an instruction is safe or
 behaviorally beneficial. These are residual risks requiring review and careful

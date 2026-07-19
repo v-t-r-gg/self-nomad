@@ -13,7 +13,9 @@ canonical content.
 Adapters do not run Git and do not decide proposal authorization. Imports are
 materialized into controlled staging and handed to the proposal service.
 Restore implementations recheck planned hashes, back up replaced files, use
-atomic file writes, and verify resulting hashes.
+an adjacent complete staging tree, verify before mutation, swap at the runtime
+directory boundary, verify again, and automatically restore the original on
+failure. Directory mappings replace rather than merge their destination.
 
 Every adapter needs synthetic fixtures proving both inclusion and exclusion,
 runtime-specific validation, conflict behavior, backup recovery, and fidelity

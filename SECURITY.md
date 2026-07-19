@@ -11,3 +11,7 @@ credentials and rewrite history if a secret is ever committed.
 Until a private reporting channel is published, open a minimal GitHub security
 advisory without sensitive reproduction data.
 
+All Git commands managed by self-nomad disable repository and global hooks.
+Configured Git clean/smudge/process filters remain trusted user infrastructure;
+do not use self-nomad with an untrusted filter executable. Proposal approval
+binds the resulting full Git tree and exact declared diff.

@@ -36,3 +36,10 @@ Hermes manages `SOUL.md`, bounded `memories/MEMORY.md` and
 configuration remain excluded or runtime-owned. OpenClaw manages only its
 workspace bootstrap files, memory, and workspace skills; its state directory
 is never an adapter input. `BOOTSTRAP.md` remains runtime-owned.
+
+Restore builds and verifies a complete sibling runtime tree before changing the
+live path. It backs up affected artifacts, renames the original runtime aside,
+atomically installs the staged directory, verifies live hashes, and rolls the
+original directory back on any failure. Proposal application refuses a target
+branch checked out in any worktree; users must detach or switch that checkout
+before applying, preventing ref/index/worktree divergence.

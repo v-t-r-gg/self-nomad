@@ -36,4 +36,12 @@ class Policy(BaseModel):
             raise ValueError("only schema_version 1 is supported")
         if self.validation.execute_repository_tests:
             raise ValueError("repository test execution is unsupported")
+        if self.approval.default != "required":
+            raise ValueError("approval.default=allowed is unsupported in v0.1")
+        if not self.validation.strict_schema:
+            raise ValueError("strict_schema cannot be disabled in v0.1")
+        if not self.validation.reject_symlinks:
+            raise ValueError("symlink rejection cannot be disabled in v0.1")
+        if not self.validation.scan_for_secrets:
+            raise ValueError("secret scanning cannot be disabled in v0.1")
         return self

@@ -103,7 +103,7 @@ class SelfNomad:
             environment = os.environ.copy()
             environment["GIT_TERMINAL_PROMPT"] = "0"
             subprocess.run(
-                ["git", "init", "--quiet", "--", str(path)],
+                ["git", "init", "--quiet", "--initial-branch=main", "--", str(path)],
                 check=True,
                 capture_output=True,
                 text=True,

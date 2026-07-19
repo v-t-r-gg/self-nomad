@@ -55,3 +55,7 @@ class AmbiguousRuntimeError(SelfNomadError):
 
 class RestoreVerificationError(SelfNomadError):
     """Restored content did not match its planned source."""
+
+
+class RecoveryRequiredError(SelfNomadError):
+    """Automatic rollback failed and manual recovery is required."""
