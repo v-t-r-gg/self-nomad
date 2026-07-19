@@ -1,0 +1,114 @@
+import hashlib
+from pathlib import Path
+
+from pydantic import ValidationError
+
+from self_nomad.domain import Finding, ValidationResult
+from self_nomad.errors import ManifestError, RepositoryNotFoundError
+from self_nomad.filesystem import contained_path, sha256_file
+from self_nomad.manifest import Manifest, load_manifest
+from self_nomad.manifest.loader import load_yaml
+from self_nomad.policy import Policy
+
+
+class SelfRepository:
+    def __init__(self, root: Path) -> None:
+        self.root = root.resolve()
+
+    @classmethod
+    def discover(cls, start: Path) -> "SelfRepository":
+        current = start.resolve()
+        if current.is_file():
+            current = current.parent
+        for candidate in (current, *current.parents):
+            if (candidate / "self-nomad.yaml").is_file():
+                return cls(candidate)
+        raise RepositoryNotFoundError(f"no self-nomad.yaml found from {start}")
+
+    @property
+    def manifest_path(self) -> Path:
+        return self.root / "self-nomad.yaml"
+
+    def load_manifest(self) -> Manifest:
+        return load_manifest(self.manifest_path)
+
+    def validate(self, *, strict: bool = False) -> ValidationResult:
+        findings: list[Finding] = []
+        digest = hashlib.sha256()
+        try:
+            manifest = self.load_manifest()
+            digest.update(sha256_file(self.manifest_path).encode())
+        except ManifestError as exc:
+            return ValidationResult(
+                valid=False,
+                findings=[Finding(severity="blocker", code="SN1001", message=str(exc))],
+                content_digest=digest.hexdigest(),
+                validator_versions={"repository": "1"},
+            )
+
+        policy: Policy | None = None
+        try:
+            policy_path = contained_path(self.root, manifest.policy, must_exist=True)
+            policy = Policy.model_validate(load_yaml(policy_path))
+            digest.update(sha256_file(policy_path).encode())
+        except (ManifestError, ValidationError, OSError) as exc:
+            findings.append(
+                Finding(
+                    severity="blocker",
+                    code="SN1002",
+                    message=f"invalid policy: {exc}",
+                    path=manifest.policy,
+                )
+            )
+
+        for relative in manifest.authoritative_paths():
+            if relative == manifest.policy:
+                continue
+            try:
+                path = contained_path(self.root, relative)
+            except ManifestError as exc:
+                findings.append(
+                    Finding(severity="blocker", code="SN1101", message=str(exc), path=relative)
+                )
+                continue
+            if not path.exists():
+                findings.append(
+                    Finding(
+                        severity="error" if strict else "warning",
+                        code="SN1102",
+                        message="referenced artifact is missing",
+                        path=relative,
+                    )
+                )
+                continue
+            if path.is_symlink() or not (path.is_file() or path.is_dir()):
+                findings.append(
+                    Finding(
+                        severity="blocker",
+                        code="SN1103",
+                        message="artifact must be a regular file or directory",
+                        path=relative,
+                    )
+                )
+                continue
+            if path.is_file():
+                if policy and path.stat().st_size > policy.limits.maximum_file_bytes:
+                    findings.append(
+                        Finding(
+                            severity="error",
+                            code="SN1201",
+                            message="artifact exceeds maximum_file_bytes",
+                            path=relative,
+                        )
+                    )
+                digest.update(relative.encode())
+                digest.update(sha256_file(path).encode())
+
+        invalid = {"error", "blocker"}
+        return ValidationResult(
+            valid=not any(item.severity in invalid for item in findings),
+            findings=findings,
+            content_digest=digest.hexdigest(),
+            validator_versions={"repository": "1"},
+        )
+
