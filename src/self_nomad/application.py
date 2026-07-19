@@ -1,11 +1,16 @@
+import os
 import re
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from self_nomad.errors import ConflictError
 from self_nomad.filesystem import atomic_write_text
 from self_nomad.repository import SelfRepository
 from self_nomad.repository.layout import ARTIFACT_TEMPLATES, POLICY_TEMPLATE, manifest_template
+
+if TYPE_CHECKING:
+    from self_nomad.proposals import ProposalService
 
 
 class SelfNomad:
@@ -15,6 +20,11 @@ class SelfNomad:
     @classmethod
     def open(cls, path: Path) -> "SelfNomad":
         return cls(SelfRepository.discover(path))
+
+    def proposals(self, *, state_root: Path | None = None) -> "ProposalService":
+        from self_nomad.proposals import ProposalService
+
+        return ProposalService(self.repository, state_root=state_root)
 
     @classmethod
     def initialize(
@@ -58,13 +68,14 @@ class SelfNomad:
         ):
             atomic_write_text(path / keep, "")
         if initialize_git:
+            environment = os.environ.copy()
+            environment["GIT_TERMINAL_PROMPT"] = "0"
             subprocess.run(
                 ["git", "init", "--quiet", "--", str(path)],
                 check=True,
                 capture_output=True,
                 text=True,
                 timeout=15,
-                env={"GIT_TERMINAL_PROMPT": "0"},
+                env=environment,
             )
         return cls(SelfRepository(path))
-

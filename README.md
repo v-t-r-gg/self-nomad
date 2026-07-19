@@ -13,9 +13,10 @@ and change-governance layer around the agents you already run.
 
 ## Development status
 
-The deterministic repository foundation is under development. The current
-slice supports repository initialization, discovery, manifest and policy
-validation, safe repository-relative paths, and JSON CLI output.
+The deterministic core is under development. The current slice supports
+repository initialization and validation plus isolated Git proposals with
+typed file operations, review, validation, approval, stale detection, atomic
+target-ref application, and committed audit records.
 
 ```bash
 uv sync
@@ -23,6 +24,22 @@ uv run self-nomad init /tmp/example --name example
 uv run self-nomad --repo /tmp/example validate --strict
 ```
 
+A change document contains typed operations:
+
+```yaml
+operations:
+  - kind: replace
+    path: memory/MEMORY.md
+    content_source: /tmp/candidate-memory.md
+```
+
+```bash
+uv run self-nomad --repo /tmp/example propose \
+  --reason "Add a curated fact" --change changes.yaml
+uv run self-nomad --repo /tmp/example validate PROPOSAL_ID
+uv run self-nomad --repo /tmp/example approve PROPOSAL_ID
+uv run self-nomad --repo /tmp/example apply PROPOSAL_ID
+```
+
 See [docs/repository-format.md](docs/repository-format.md) for the format and
 [docs/threat-model.md](docs/threat-model.md) for the security boundary.
-
