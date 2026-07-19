@@ -67,4 +67,3 @@ ARTIFACT_TEMPLATES = {
     "memory/MEMORY.md": "# Memory\n",
     "tools/notes.md": "# Tool notes\n",
 }
-

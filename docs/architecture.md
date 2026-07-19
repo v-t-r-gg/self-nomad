@@ -22,3 +22,17 @@ state transition. Application reacquires the repository lock, checks the target
 ref and content digest, commits a redacted audit record, and advances the target
 with `git update-ref <ref> <new> <expected-old>`. A moved target becomes stale;
 there is no implicit merge or rebase. No application operation pushes a remote.
+
+## Runtime adapters
+
+Adapters return typed detection and transfer plans containing explicit mapping
+fidelity, actions, conflicts, and exclusions. Import materialization writes to
+local staging and becomes a normal Git proposal. Restore previews by default;
+confirmed application rechecks target hashes, copies replaced content to XDG
+state, writes regular files atomically, and verifies resulting tree digests.
+
+Hermes manages `SOUL.md`, bounded `memories/MEMORY.md` and
+`memories/USER.md`, and profile-local skills. `.env`, `state.db`, sessions, and
+configuration remain excluded or runtime-owned. OpenClaw manages only its
+workspace bootstrap files, memory, and workspace skills; its state directory
+is never an adapter input. `BOOTSTRAP.md` remains runtime-owned.

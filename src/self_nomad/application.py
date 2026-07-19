@@ -1,15 +1,17 @@
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from self_nomad.errors import ConflictError
-from self_nomad.filesystem import atomic_write_text
+from self_nomad.filesystem import atomic_write_text, sha256_file
 from self_nomad.repository import SelfRepository
 from self_nomad.repository.layout import ARTIFACT_TEMPLATES, POLICY_TEMPLATE, manifest_template
 
 if TYPE_CHECKING:
+    from self_nomad.domain import ProposalRecord, TransferPlan
     from self_nomad.proposals import ProposalService
 
 
@@ -25,6 +27,36 @@ class SelfNomad:
         from self_nomad.proposals import ProposalService
 
         return ProposalService(self.repository, state_root=state_root)
+
+    def create_import_proposal(
+        self,
+        plan: "TransferPlan",
+        *,
+        reason: str,
+        state_root: Path | None = None,
+    ) -> "ProposalRecord":
+        from self_nomad.adapters import default_registry
+        from self_nomad.domain import FileOperation
+
+        service = self.proposals(state_root=state_root)
+        staging = Path(tempfile.mkdtemp(prefix="import-", dir=service.store.root))
+        default_registry().get(plan.adapter).materialize_import(plan, staging)
+        operations: list[FileOperation] = []
+        for source in sorted(item for item in staging.rglob("*") if item.is_file()):
+            relative = source.relative_to(staging).as_posix()
+            target = self.repository.root / relative
+            operations.append(
+                FileOperation(
+                    kind="replace" if target.exists() else "add",
+                    path=relative,
+                    expected_before_sha256=sha256_file(target) if target.exists() else None,
+                    expected_after_sha256=sha256_file(source),
+                    content_source=str(source),
+                )
+            )
+        if not operations:
+            raise ConflictError("import plan has no changes")
+        return service.create(reason=reason, operations=operations)
 
     @classmethod
     def initialize(

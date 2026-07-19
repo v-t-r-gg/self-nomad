@@ -63,4 +63,3 @@ class GitBackend:
 
     def remove_worktree(self, path: Path) -> None:
         self.run("worktree", "remove", "--force", str(path))
-

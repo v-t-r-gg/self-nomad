@@ -50,4 +50,3 @@ def test_cli_propose_validate_review_and_approve(tmp_path: Path) -> None:
     assert json.loads(validated.stdout)["result"]["status"] == "validated"
     assert json.loads(reviewed.stdout)["result"]["proposal"]["reason"] == "Update preference"
     assert json.loads(approved.stdout)["result"]["status"] == "approved"
-

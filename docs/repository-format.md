@@ -14,3 +14,7 @@ Machine-specific runtime paths belong in the ignored
 `.self-nomad.local.yaml` or the platform configuration directory, never in the
 portable manifest.
 
+All files below authoritative directories contribute their relative paths and
+SHA-256 values to validation. Symlinks, special files, denylisted credential
+filenames, and files exceeding policy limits invalidate the repository. Empty
+directories and `.gitkeep` placeholders have no portable semantics.

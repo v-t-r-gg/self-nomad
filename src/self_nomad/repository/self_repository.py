@@ -12,6 +12,15 @@ from self_nomad.policy import Policy
 
 
 class SelfRepository:
+    SENSITIVE_NAMES = {
+        ".env",
+        "credentials.json",
+        "auth-profiles.json",
+        "id_rsa",
+        "id_ed25519",
+        "state.db",
+    }
+
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
 
@@ -91,18 +100,45 @@ class SelfRepository:
                     )
                 )
                 continue
-            if path.is_file():
-                if policy and path.stat().st_size > policy.limits.maximum_file_bytes:
+            files = [path] if path.is_file() else sorted(path.rglob("*"))
+            for artifact_file in files:
+                artifact_relative = artifact_file.relative_to(self.root).as_posix()
+                if artifact_file.is_symlink() or (
+                    artifact_file.exists()
+                    and not artifact_file.is_file()
+                    and not artifact_file.is_dir()
+                ):
+                    findings.append(
+                        Finding(
+                            severity="blocker",
+                            code="SN1103",
+                            message="artifact tree contains a symlink or special file",
+                            path=artifact_relative,
+                        )
+                    )
+                    continue
+                if artifact_file.is_dir():
+                    continue
+                if artifact_file.name in self.SENSITIVE_NAMES or artifact_file.suffix == ".pem":
+                    findings.append(
+                        Finding(
+                            severity="blocker",
+                            code="SN1301",
+                            message="sensitive filename is prohibited",
+                            path=artifact_relative,
+                        )
+                    )
+                if policy and artifact_file.stat().st_size > policy.limits.maximum_file_bytes:
                     findings.append(
                         Finding(
                             severity="error",
                             code="SN1201",
                             message="artifact exceeds maximum_file_bytes",
-                            path=relative,
+                            path=artifact_relative,
                         )
                     )
-                digest.update(relative.encode())
-                digest.update(sha256_file(path).encode())
+                digest.update(artifact_relative.encode())
+                digest.update(sha256_file(artifact_file).encode())
 
         invalid = {"error", "blocker"}
         return ValidationResult(
@@ -111,4 +147,3 @@ class SelfRepository:
             content_digest=digest.hexdigest(),
             validator_versions={"repository": "1"},
         )
-

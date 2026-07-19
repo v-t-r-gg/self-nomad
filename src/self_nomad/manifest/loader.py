@@ -24,4 +24,3 @@ def load_manifest(path: Path) -> Manifest:
         return Manifest.model_validate(raw)
     except ValidationError as exc:
         raise ManifestError(f"invalid self-nomad.yaml: {exc}") from exc
-

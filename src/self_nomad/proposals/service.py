@@ -87,8 +87,7 @@ class ProposalService:
         ):
             return "critical"
         if any(
-            operation.kind == "delete"
-            or operation.path.startswith("identity/")
+            operation.kind == "delete" or operation.path.startswith("identity/")
             for operation in operations
         ):
             return "high"

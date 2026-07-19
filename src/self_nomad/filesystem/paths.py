@@ -12,4 +12,3 @@ def contained_path(root: Path, relative: str, *, must_exist: bool = False) -> Pa
     except (OSError, ValueError) as exc:
         raise ManifestError(f"path escapes repository: {relative}") from exc
     return resolved
-

@@ -16,7 +16,9 @@ and change-governance layer around the agents you already run.
 The deterministic core is under development. The current slice supports
 repository initialization and validation plus isolated Git proposals with
 typed file operations, review, validation, approval, stale detection, atomic
-target-ref application, and committed audit records.
+target-ref application, and committed audit records. Hermes and OpenClaw
+adapters provide deterministic detection, import/restore plans, explicit
+fidelity and exclusion reporting, verified backups, and atomic file writes.
 
 ```bash
 uv sync
@@ -40,6 +42,22 @@ uv run self-nomad --repo /tmp/example validate PROPOSAL_ID
 uv run self-nomad --repo /tmp/example approve PROPOSAL_ID
 uv run self-nomad --repo /tmp/example apply PROPOSAL_ID
 ```
+
+Runtime operations preview by default:
+
+```bash
+self-nomad --repo ./my-agent detect --adapter hermes
+self-nomad --repo ./my-agent import --adapter hermes --from ~/.hermes
+self-nomad --repo ./my-agent import --adapter hermes --from ~/.hermes --yes
+self-nomad --repo ./my-agent restore --adapter openclaw \
+  --to ~/.openclaw/workspace
+self-nomad --repo ./my-agent restore --adapter openclaw \
+  --to ~/.openclaw/workspace --yes
+```
+
+`--yes` confirms the displayed class of mutation; it never enables secret or
+session migration. Imports create proposals and do not directly change the
+active branch.
 
 See [docs/repository-format.md](docs/repository-format.md) for the format and
 [docs/threat-model.md](docs/threat-model.md) for the security boundary.

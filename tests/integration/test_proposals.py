@@ -34,9 +34,7 @@ def test_proposal_is_isolated_then_applies_with_audit(tmp_path: Path) -> None:
     record = service.create(
         reason="Add a curated portable fact",
         operations=[
-            FileOperation(
-                kind="replace", path="memory/MEMORY.md", content_source=str(source)
-            )
+            FileOperation(kind="replace", path="memory/MEMORY.md", content_source=str(source))
         ],
     )
 

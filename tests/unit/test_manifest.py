@@ -28,4 +28,3 @@ def test_manifest_rejects_unknown_keys() -> None:
     data["unexpected"] = True
     with pytest.raises(ValidationError):
         Manifest.model_validate(data)
-

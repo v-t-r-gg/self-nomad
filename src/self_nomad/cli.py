@@ -9,9 +9,10 @@ from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 
 from self_nomad import __version__
+from self_nomad.adapters import default_registry
 from self_nomad.application import SelfNomad
-from self_nomad.domain import FileOperation
-from self_nomad.errors import SelfNomadError
+from self_nomad.domain import FileOperation, RuntimeRef
+from self_nomad.errors import AmbiguousRuntimeError, RepositoryNotFoundError, SelfNomadError
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 console = Console()
@@ -145,6 +146,117 @@ def status() -> None:
     emit("status", validation.valid, result)
     if not state.json_output:
         console.print(f"{manifest.self.name}: {'valid' if validation.valid else 'invalid'}")
+
+
+def runtime_for(adapter_name: str, path: Path | None) -> RuntimeRef:
+    adapter = default_registry().get(adapter_name)
+    detection = adapter.detect(path)
+    if not detection.candidates:
+        raise RepositoryNotFoundError(f"no {adapter_name} runtime found")
+    if len(detection.candidates) > 1:
+        raise AmbiguousRuntimeError(
+            f"multiple {adapter_name} runtimes found; select one with --path/--from"
+        )
+    return detection.candidates[0]
+
+
+@app.command()
+def detect(
+    adapter_name: Annotated[str, typer.Option("--adapter")] = "hermes",
+    path: Annotated[Path | None, typer.Option("--path")] = None,
+) -> None:
+    """Detect compatible runtime instances without mutation."""
+    try:
+        result = default_registry().get(adapter_name).detect(path)
+    except SelfNomadError as exc:
+        fail("detect", exc)
+    emit("detect", True, result.model_dump(mode="json"))
+    if not state.json_output:
+        for candidate in result.candidates:
+            console.print(f"{candidate.name}: {candidate.root}")
+
+
+@app.command("diff")
+def diff_runtime(
+    adapter_name: Annotated[str, typer.Option("--adapter")],
+    direction: Annotated[str, typer.Option("--direction")],
+    path: Annotated[Path | None, typer.Option("--path")] = None,
+) -> None:
+    """Show deterministic import or restore drift without writes."""
+    try:
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        adapter = default_registry().get(adapter_name)
+        runtime = runtime_for(adapter_name, path)
+        plan = (
+            adapter.plan_import(runtime, instance.repository)
+            if direction == "import"
+            else adapter.plan_restore(instance.repository, runtime)
+        )
+        if direction not in {"import", "restore"}:
+            raise ValueError("direction must be import or restore")
+    except (SelfNomadError, ValueError) as exc:
+        fail("diff", exc)
+    emit("diff", True, plan.model_dump(mode="json"))
+    if not state.json_output:
+        for mapping in plan.mappings:
+            console.print(
+                f"{mapping.fidelity.value.upper():10} {mapping.action:9} {mapping.artifact}"
+            )
+        for excluded in plan.exclusions:
+            console.print(f"{excluded.fidelity.value.upper():18} {excluded.artifact}")
+
+
+@app.command("import")
+def import_runtime(
+    adapter_name: Annotated[str, typer.Option("--adapter")],
+    source_path: Annotated[Path | None, typer.Option("--from")] = None,
+    reason: Annotated[str, typer.Option("--reason")] = "Import durable runtime state",
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Plan an import and optionally create an isolated proposal."""
+    try:
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        adapter = default_registry().get(adapter_name)
+        plan = adapter.plan_import(runtime_for(adapter_name, source_path), instance.repository)
+        if not yes:
+            emit("import", True, {"applied": False, "plan": plan.model_dump(mode="json")})
+            if not state.json_output:
+                console.print("Import plan only; pass --yes to create a proposal.")
+            return
+        record = instance.create_import_proposal(plan, reason=reason)
+    except SelfNomadError as exc:
+        fail("import", exc)
+    emit("import", True, {"applied": True, "proposal": record.model_dump(mode="json")})
+    if not state.json_output:
+        console.print(f"Created import proposal {record.proposal.id}.")
+
+
+@app.command()
+def restore(
+    adapter_name: Annotated[str, typer.Option("--adapter")],
+    target: Annotated[Path, typer.Option("--to")],
+    yes: Annotated[bool, typer.Option("--yes")] = False,
+) -> None:
+    """Plan a restore and apply only with explicit confirmation."""
+    try:
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        adapter = default_registry().get(adapter_name)
+        runtime = RuntimeRef(adapter=adapter_name, root=target, name=target.name)
+        plan = adapter.plan_restore(instance.repository, runtime)
+        validation = adapter.validate(instance.repository, runtime)
+        if not validation.valid:
+            raise ValueError("adapter validation failed")
+        if not yes:
+            emit("restore", True, {"applied": False, "plan": plan.model_dump(mode="json")})
+            if not state.json_output:
+                console.print("Restore plan only; pass --yes to apply it.")
+            return
+        result = adapter.apply_restore(plan)
+    except (SelfNomadError, ValueError) as exc:
+        fail("restore", exc)
+    emit("restore", True, {"applied": True, "result": result.model_dump(mode="json")})
+    if not state.json_output:
+        console.print(f"Restored {len(result.written)} files; backup: {result.backup_root}")
 
 
 @app.command()

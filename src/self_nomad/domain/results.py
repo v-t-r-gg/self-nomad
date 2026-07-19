@@ -16,4 +16,3 @@ class ValidationResult(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     validator_versions: dict[str, str] = Field(default_factory=dict)
     content_digest: str
-

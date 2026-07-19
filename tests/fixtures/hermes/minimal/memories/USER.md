@@ -1,0 +1,3 @@
+# User
+
+Prefers concise output.

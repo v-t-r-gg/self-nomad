@@ -43,3 +43,15 @@ class ValidationFailedError(SelfNomadError):
 
 class PolicyDeniedError(SelfNomadError):
     """Policy does not authorize an operation."""
+
+
+class AdapterNotFoundError(SelfNomadError):
+    """A requested runtime adapter is unavailable."""
+
+
+class AmbiguousRuntimeError(SelfNomadError):
+    """Runtime detection returned multiple candidates."""
+
+
+class RestoreVerificationError(SelfNomadError):
+    """Restored content did not match its planned source."""

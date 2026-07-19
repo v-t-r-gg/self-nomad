@@ -40,3 +40,21 @@ def test_nonempty_destination_is_not_overwritten(tmp_path: Path) -> None:
         raise AssertionError("initialization should have failed")
     assert (target / "owned.txt").read_text() == "keep"
 
+
+def test_directory_content_changes_validation_digest(tmp_path: Path) -> None:
+    app = SelfNomad.initialize(tmp_path / "agent", name="example", initialize_git=False)
+    skill = app.repository.root / "skills/example"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("# First\n", encoding="utf-8")
+    before = app.repository.validate(strict=True).content_digest
+    (skill / "SKILL.md").write_text("# Second\n", encoding="utf-8")
+    after = app.repository.validate(strict=True).content_digest
+    assert before != after
+
+
+def test_sensitive_file_inside_artifact_tree_is_blocked(tmp_path: Path) -> None:
+    app = SelfNomad.initialize(tmp_path / "agent", name="example", initialize_git=False)
+    (app.repository.root / "skills/.env").write_text("TOKEN=sentinel", encoding="utf-8")
+    result = app.repository.validate(strict=True)
+    assert not result.valid
+    assert any(finding.code == "SN1301" for finding in result.findings)

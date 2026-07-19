@@ -70,4 +70,3 @@ class ProposalRecord(BaseModel):
     approval_identifier: str | None = None
     rejection_reason: str | None = None
     applied_commit: str | None = None
-

@@ -37,4 +37,3 @@ class Policy(BaseModel):
         if self.validation.execute_repository_tests:
             raise ValueError("repository test execution is unsupported")
         return self
-

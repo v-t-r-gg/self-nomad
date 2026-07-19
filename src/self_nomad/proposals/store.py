@@ -40,4 +40,3 @@ class ProposalStore:
             ProposalRecord.model_validate_json(path.read_text(encoding="utf-8"))
             for path in sorted(self.records.glob("*.json"))
         ]
-
