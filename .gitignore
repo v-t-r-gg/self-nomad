@@ -9,3 +9,5 @@ build/
 dist/
 *.egg-info/
 
+# Maintainer-local testing notes and paths
+PERSONAL-TESTING.md
