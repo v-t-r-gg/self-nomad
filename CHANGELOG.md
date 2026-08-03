@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires a fixed absolute `--repo`, keeps protocol traffic on stdout and
   diagnostics on stderr, and redacts staging paths and inline content from
   tool results.
+- MCP tool results use fixed public error messages (no raw Git stderr,
+  staging paths, or exception `repr`); recognized-tool argument failures
+  return envelopes instead of SDK validation text that could echo input
+  values.
 
 ## [0.1.0rc1] - 2026-08-03
 

@@ -1,6 +1,17 @@
 // Example OpenClaw MCP server entry for self-nomad.
 // Copy the mcp.servers.self_nomad block into your OpenClaw config.
 // Replace both absolute paths before use. self-nomad never writes this file.
+//
+// Native server tools (exactly seven, registered by self-nomad-mcp):
+//   self_nomad_repository_status, self_nomad_repository_validate,
+//   self_nomad_intake_preview, self_nomad_intake_submit,
+//   self_nomad_proposal_list, self_nomad_proposal_get,
+//   self_nomad_proposal_validate
+//
+// OpenClaw-generated resource utilities (host-side wrappers, not native tools):
+//   resources_list, resources_read
+// These must be included in toolFilter so the packaged ProposalRequest schema
+// resource remains reachable (self-nomad://schemas/proposal-request/v1).
 {
   mcp: {
     servers: {
@@ -18,7 +29,9 @@
             "self_nomad_intake_submit",
             "self_nomad_proposal_list",
             "self_nomad_proposal_get",
-            "self_nomad_proposal_validate"
+            "self_nomad_proposal_validate",
+            "resources_list",
+            "resources_read"
           ]
         }
       }

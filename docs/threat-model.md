@@ -25,9 +25,12 @@ The optional MCP server inherits the intake trust model and adds a local
 process boundary: no authentication in stdio mode (the operator who configures
 the host and `--repo` is trusted), fixed repository root for the process
 lifetime, closed tool allow-list (no approve/apply/import/restore), sanitized
-proposal payloads without inline content or staging paths, and stderr-only
-diagnostics so protocol framing on stdout cannot leak stack traces. Host tool
-filters are complementary; the server allow-list is authoritative.
+proposal payloads without inline content or staging paths, fixed public error
+messages that never echo Git stderr or exception text, recognized-tool
+argument failures returned as envelopes rather than raw SDK validation
+output, and stderr-only diagnostics so protocol framing on stdout cannot leak
+stack traces. Host tool filters are complementary; the server allow-list is
+authoritative.
 
 Managed Git commands override `core.hooksPath` with a platform null device; repository and
 global hooks therefore do not execute. Git clean/smudge/process filters remain

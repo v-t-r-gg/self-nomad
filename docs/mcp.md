@@ -84,7 +84,7 @@ remains authoritative.
 
 ## Result envelope
 
-Successful and failed tool calls return structured content:
+Successful and failed **recognized-tool** calls return structured content:
 
 ```json
 {
@@ -97,11 +97,22 @@ Successful and failed tool calls return structured content:
 }
 ```
 
-Errors carry stable codes (existing self-nomad codes plus MCP transport codes
-such as `MCP_REPOSITORY_UNAVAILABLE`, `MCP_CONFIGURATION_ERROR`,
-`MCP_INVALID_ARGUMENT`). Responses never include tracebacks, environment
-variables, inline proposal content, absolute staging paths, raw receipts, or
-unbounded Git output.
+Errors carry stable public codes and fixed safe messages (for example
+`PROPOSAL_NOT_FOUND`, `INTAKE_ID_CONFLICT`, `MCP_INVALID_ARGUMENT`). Responses
+never include tracebacks, environment variables, inline proposal content,
+absolute staging/worktree paths, raw receipts, Git stderr, or exception
+`repr` / Pydantic `input_value` text.
+
+### Error channel distinctions
+
+| Channel | When | Shape |
+| --- | --- | --- |
+| Recognized-tool envelope | Invalid arguments or mapped domain failures on the seven tools | `ok: false` envelope above |
+| MCP protocol error | Unknown tool name, transport/handshake failures | Standard MCP error (outside the registry) |
+| stderr diagnostics | Operator-facing startup/import/internal logs | Plain text; never on stdout |
+
+Malformed arguments for recognized tools are validated before handler
+execution and always return the envelope (not raw SDK validation text).
 
 ## Resource
 
@@ -144,3 +155,5 @@ Examples live under `examples/mcp/`.
 
 Optional dependency: official Python MCP SDK v2 (`mcp>=2,<3`). Locked release
 and protocol compatibility are recorded in the delivery PR and ADR 0006.
+Production code uses only public SDK APIs (`MCPServer`, tool/resource
+decorators, `server.middleware`, `ToolAnnotations`).

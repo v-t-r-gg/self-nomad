@@ -33,9 +33,16 @@ proposal lifecycle; the question is how much of that surface to expose over MCP.
 
 ## Consequences
 
-- Base installs stay free of the MCP SDK.
+- Base installs stay free of the MCP SDK; installed base smoke asserts `mcp`
+  and `mcp_types` are absent and `self-nomad-mcp` prints the install hint.
 - Operators retain the human gate for durable branch advancement.
-- Host tool filters are complementary, not authoritative.
+- Host tool filters are complementary, not authoritative. OpenClaw filters
+  must also allow host-generated `resources_list` / `resources_read` if the
+  schema resource should remain reachable.
+- Recognized-tool argument failures return self-nomad envelopes with fixed
+  public messages; unknown tools remain protocol-level MCP errors.
+- Public error mapping never surfaces raw Git stderr, staging paths, or
+  exception strings.
 - HTTP/SSE/auth/OAuth remote deployment remain future work.
 - Concurrent hosts on one repository still share local proposal locks and
   intake receipts.
