@@ -1,0 +1,27 @@
+// Example OpenClaw MCP server entry for self-nomad.
+// Copy the mcp.servers.self_nomad block into your OpenClaw config.
+// Replace both absolute paths before use. self-nomad never writes this file.
+{
+  mcp: {
+    servers: {
+      self_nomad: {
+        command: "/absolute/path/to/self-nomad-mcp",
+        args: [
+          "--repo",
+          "/absolute/path/to/agent-self"
+        ],
+        toolFilter: {
+          include: [
+            "self_nomad_repository_status",
+            "self_nomad_repository_validate",
+            "self_nomad_intake_preview",
+            "self_nomad_intake_submit",
+            "self_nomad_proposal_list",
+            "self_nomad_proposal_get",
+            "self_nomad_proposal_validate"
+          ]
+        }
+      }
+    }
+  }
+}

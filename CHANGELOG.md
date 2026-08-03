@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   service, CLI `intake`, JSON Schema, and idempotent request receipts.
 - Examples and documentation for Hermes/OpenClaw-style memory and skill updates.
 - Policy limit `limits.maximum_request_bytes` (default 4 MiB).
+- Optional bounded local MCP server (`self-nomad-mcp`) behind
+  `self-nomad[mcp]` (official Python MCP SDK v2): repository status/validate,
+  intake preview/submit, proposal list/get/validate, and the packaged
+  ProposalRequest schema resource. OpenClaw and Hermes configuration examples
+  under `examples/mcp/`; docs in `docs/mcp.md` and ADR 0006.
+- Installed-artifact MCP smoke harness (`scripts/mcp_smoke.py`).
 
 ### Changed
 
@@ -22,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Intake rejects invalid UTF-8, control characters, path escape, secrets in
   content/provenance, and caller-supplied content paths.
+- MCP surface is a closed allow-list (no approve/apply/import/restore tools),
+  requires a fixed absolute `--repo`, keeps protocol traffic on stdout and
+  diagnostics on stderr, and redacts staging paths and inline content from
+  tool results.
 
 ## [0.1.0rc1] - 2026-08-03
 

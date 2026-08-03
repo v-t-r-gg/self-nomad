@@ -23,7 +23,7 @@ maintainer approval after CI is green.
 git status
 git pull --ff-only origin main
 uv lock --check
-uv sync --extra dev
+uv sync --extra dev --extra mcp
 ```
 
 `uv lock --check` must exit 0. If it fails, regenerate with `uv lock`, review
@@ -34,6 +34,7 @@ the diff, and commit it in a dedicated change—not as part of an unrelated PR.
 ```bash
 uv run ruff check .
 uv run mypy
+uv run python scripts/export_proposal_request_schema.py --check
 uv run pytest --cov=self_nomad --cov-report=term-missing
 ```
 
@@ -91,24 +92,26 @@ Operate against `dist/` only—never editable mode:
 
 ```bash
 uv run python scripts/release_smoke.py
+uv run python scripts/mcp_smoke.py
 ```
 
-For each wheel and sdist the harness:
+For each wheel and sdist the base harness:
 
 1. Creates a fresh temporary virtual environment
-2. Installs the artifact (non-editable)
+2. Installs the artifact (non-editable, **without** the MCP extra)
 3. Asserts `import self_nomad`, `importlib.metadata.version("self-nomad")`, and
    the version parsed from the artifact filename all agree (never `0+unknown`)
 4. Runs `self-nomad --version` and `self-nomad --help`
 5. Initializes a temporary repository and runs strict JSON validation
 6. Confirms `py.typed` is present on the installed package
 
-The harness upgrades pip and resolves runtime dependencies from the package
-index (network). The local wheel/sdist is installed from disk; there is no
-offline wheelhouse or `--no-index` mode unless you pre-seed a cache/mirror
-yourself.
+`scripts/mcp_smoke.py` separately installs each artifact with the `mcp` extra,
+launches `self-nomad-mcp` over the official client stdio transport, lists the
+closed tool set, calls repository status, reads the schema resource, and shuts
+down cleanly.
 
-Failures name the artifact and command. Re-run only after fixing and
+Both harnesses upgrade pip and resolve dependencies from the package index
+(network). Failures name the artifact and command. Re-run only after fixing and
 rebuilding; do not tag on smoke failure.
 
 ## 6. Checksums

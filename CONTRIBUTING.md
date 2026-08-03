@@ -9,23 +9,25 @@ Run this sequence from a clean worktree before opening or updating a PR:
 
 ```bash
 uv lock --check
-uv sync --extra dev
+uv sync --extra dev --extra mcp
 uv run ruff check .
 uv run mypy
 uv run python scripts/export_proposal_request_schema.py --check
 uv run pytest --cov=self_nomad --cov-report=term-missing
 uv build
 uv run python scripts/release_smoke.py
+uv run python scripts/mcp_smoke.py
 ```
 
 | Step | Purpose |
 | --- | --- |
 | `uv lock --check` | Fail if `uv.lock` is out of sync with `pyproject.toml` |
-| `uv sync --extra dev` | Install runtime + dev tools into the project environment |
+| `uv sync --extra dev --extra mcp` | Install runtime + dev tools + optional MCP SDK |
 | `ruff` / `mypy` | Lint and strict type checks |
 | `pytest --cov` | Full suite with coverage floor (`fail_under` in `pyproject.toml`) |
 | `uv build` | Produce wheel + sdist under `dist/` |
-| `scripts/release_smoke.py` | Fresh venv install of each artifact; CLI init + strict JSON validate |
+| `scripts/release_smoke.py` | Fresh venv install of each artifact (base, no MCP extra) |
+| `scripts/mcp_smoke.py` | Fresh venv install with `[mcp]`; stdio tool list + status + schema |
 
 CI also runs the test matrix on Ubuntu (Python 3.11–3.13) and compatibility jobs
 on macOS and Windows (Python 3.13), plus a dedicated distribution job.
@@ -68,10 +70,13 @@ itself.
 
 Layout:
 
-- `tests/unit/` — pure helpers, manifests, packaging, version
-- `tests/integration/` — adapters and proposal service
+- `tests/unit/` — pure helpers, manifests, packaging, version, MCP surface
+- `tests/integration/` — adapters, proposal service, MCP in-process and stdio
 - `tests/e2e/` — CLI (in-process Typer + one subprocess path)
-- `scripts/release_smoke.py` — installed wheel/sdist only (not the editable tree)
+- `scripts/release_smoke.py` — installed wheel/sdist base install (not the editable tree)
+- `scripts/mcp_smoke.py` — installed wheel/sdist with `[mcp]` extra
+
+Do not import the MCP SDK from core packages outside `self_nomad.mcp_server`.
 
 ## Versioning
 
