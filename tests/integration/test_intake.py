@@ -17,6 +17,7 @@ from self_nomad.errors import (
     IntakeIdConflictError,
     IntakePolicyRejectedError,
     IntakeRequestTooLargeError,
+    IntakeTargetMovedError,
 )
 from self_nomad.filesystem import sha256_file
 from self_nomad.intake import IntakeService, ProposalRequest, load_proposal_request
@@ -420,3 +421,180 @@ def test_unicode_byte_count_enforced(tmp_path: Path) -> None:
     raw = request_bytes(content=content, request_id="unicode:1")
     with pytest.raises(IntakeContentTooLargeError):
         app.intake(state_root=tmp_path / "state").preview(load_proposal_request(raw))
+
+
+def test_preview_id_conflict_for_changed_payload_statuses(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="conflict:preview")
+    changed = request_bytes(request_id="conflict:preview", content="# Memory\n\n- other\n")
+    # completed
+    app.intake(state_root=state).submit(load_proposal_request(raw))
+    preview = app.intake(state_root=state).preview(load_proposal_request(changed))
+    assert preview.eligible is False
+    assert any(item.code == "INTAKE_ID_CONFLICT" for item in preview.findings)
+    with pytest.raises(IntakeIdConflictError):
+        app.intake(state_root=state).submit(load_proposal_request(changed))
+
+    # pending
+    from self_nomad.intake.service import InjectedCrash
+
+    pending_raw = request_bytes(request_id="conflict:pending")
+    with pytest.raises(InjectedCrash):
+        IntakeService(app.repository, state_root=state, fault_after="pending_receipt").submit(
+            load_proposal_request(pending_raw)
+        )
+    pending_changed = request_bytes(request_id="conflict:pending", content="# Memory\n\n- x\n")
+    p2 = app.intake(state_root=state).preview(load_proposal_request(pending_changed))
+    assert any(item.code == "INTAKE_ID_CONFLICT" for item in p2.findings)
+    with pytest.raises(IntakeIdConflictError):
+        app.intake(state_root=state).submit(load_proposal_request(pending_changed))
+
+    # failed: force failed receipt with different digest check
+    failed_id = "conflict:failed"
+    service = app.intake(state_root=state)
+    service.store.ensure_writable()
+    from uuid import uuid4
+
+    from self_nomad.intake.store import IntakeReceipt
+
+    tip = git(app.repository.root, "rev-parse", "HEAD")
+    service.store.save_receipt(
+        IntakeReceipt(
+            request_id=failed_id,
+            request_digest="0" * 64,
+            status="failed",
+            proposal_id=uuid4(),
+            target_branch="main",
+            base_commit=tip,
+            error="Synthetic",
+        )
+    )
+    failed_changed = request_bytes(request_id=failed_id, content="# Memory\n\n- y\n")
+    p3 = app.intake(state_root=state).preview(load_proposal_request(failed_changed))
+    assert any(item.code == "INTAKE_ID_CONFLICT" for item in p3.findings)
+
+
+def test_preview_matching_completed_receipt_exposes_proposal(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="match:completed")
+    submitted = app.intake(state_root=state).submit(load_proposal_request(raw))
+    preview = app.intake(state_root=state).preview(load_proposal_request(raw))
+    assert preview.eligible is True
+    assert preview.existing_proposal_id == submitted.proposal_id
+    assert preview.existing_status is ProposalStatus.MATERIALIZED
+
+
+def test_preview_id_conflict_creates_no_durable_state(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    state = tmp_path / "fresh-state"
+    assert not state.exists()
+    raw = request_bytes(request_id="fresh:conflict-a")
+    # Seed conflict under a different state root, then conflict-preview on empty state
+    # for a never-seen id does not create state; for true conflict need a receipt.
+    seed_state = tmp_path / "seed"
+    app.intake(state_root=seed_state).submit(load_proposal_request(raw))
+    head = git(app.repository.root, "rev-parse", "HEAD")
+    status = git(app.repository.root, "status", "--porcelain")
+    branches = git(app.repository.root, "branch")
+    # Conflict preview under seed state must not add proposals.
+    before = count_proposals(seed_state)
+    changed = request_bytes(request_id="fresh:conflict-a", content="# Memory\n\n- z\n")
+    preview = app.intake(state_root=seed_state).preview(load_proposal_request(changed))
+    assert preview.eligible is False
+    assert count_proposals(seed_state) == before
+    assert git(app.repository.root, "rev-parse", "HEAD") == head
+    assert git(app.repository.root, "status", "--porcelain") == status
+    assert git(app.repository.root, "branch") == branches
+    assert not state.exists()
+
+
+def test_submit_binds_to_preview_base_and_rejects_moved_target(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="move:bind")
+    # After preview, move main tip before first receipt.
+    preview = app.intake(state_root=state).preview(load_proposal_request(raw))
+    preview_base = preview.base_commit
+    (root / "README.md").write_text("moved after preview\n", encoding="utf-8")
+    git(root, "add", "README.md")
+    git(root, "commit", "-m", "move main after preview")
+    new_tip = git(root, "rev-parse", "HEAD")
+    assert new_tip != preview_base
+    # First submit binds to current tip at submit time (no receipt yet).
+    result = app.intake(state_root=state).submit(load_proposal_request(raw))
+    record = app.proposals(state_root=state).store.load(result.proposal_id)
+    assert record.proposal.base_commit == new_tip
+    assert count_proposals(state) == 1
+
+
+def test_target_moved_after_pending_receipt_before_draft(tmp_path: Path) -> None:
+    from self_nomad.intake.service import InjectedCrash
+
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="move:pending")
+    with pytest.raises(InjectedCrash):
+        IntakeService(app.repository, state_root=state, fault_after="pending_receipt").submit(
+            load_proposal_request(raw)
+        )
+    receipt = app.intake(state_root=state).store.load_receipt("move:pending")
+    assert receipt is not None
+    frozen = receipt.base_commit
+    (root / "README.md").write_text("moved after pending\n", encoding="utf-8")
+    git(root, "add", "README.md")
+    git(root, "commit", "-m", "move after pending")
+    with pytest.raises(IntakeTargetMovedError) as exc:
+        app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert exc.value.code == "INTAKE_TARGET_MOVED"
+    assert count_proposals(state) == 0
+    # Receipt remains pending for recovery if tip is restored.
+    receipt2 = app.intake(state_root=state).store.load_receipt("move:pending")
+    assert receipt2 is not None
+    assert receipt2.status == "pending"
+    assert receipt2.base_commit == frozen
+    assert receipt2.proposal_id == receipt.proposal_id
+
+
+def test_target_moved_after_draft_still_materializes_frozen_base(tmp_path: Path) -> None:
+    from self_nomad.intake.service import InjectedCrash
+
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="move:draft")
+    with pytest.raises(InjectedCrash):
+        IntakeService(app.repository, state_root=state, fault_after="proposal_record").submit(
+            load_proposal_request(raw)
+        )
+    receipt = app.intake(state_root=state).store.load_receipt("move:draft")
+    assert receipt is not None
+    frozen = receipt.base_commit
+    (root / "README.md").write_text("moved after draft\n", encoding="utf-8")
+    git(root, "add", "README.md")
+    git(root, "commit", "-m", "move after draft")
+    # Materialization uses frozen base from draft/receipt; tip movement is ok.
+    result = app.intake(state_root=state).submit(load_proposal_request(raw))
+    record = app.proposals(state_root=state).store.load(result.proposal_id)
+    assert record.proposal.base_commit == frozen
+    assert count_proposals(state) == 1
+
+
+def test_completed_reuse_ignores_later_branch_movement(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="move:completed")
+    first = app.intake(state_root=state).submit(load_proposal_request(raw))
+    frozen = app.proposals(state_root=state).store.load(first.proposal_id).proposal.base_commit
+    (root / "README.md").write_text("moved after complete\n", encoding="utf-8")
+    git(root, "add", "README.md")
+    git(root, "commit", "-m", "move after complete")
+    second = app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert second.reused is True
+    assert second.proposal_id == first.proposal_id
+    record = app.proposals(state_root=state).store.load(second.proposal_id)
+    assert record.proposal.base_commit == frozen

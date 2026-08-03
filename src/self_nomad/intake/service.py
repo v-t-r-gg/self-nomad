@@ -24,6 +24,7 @@ from self_nomad.errors import (
     IntakePolicyRejectedError,
     IntakeRequestTooLargeError,
     IntakeSubmissionFailedError,
+    IntakeTargetMovedError,
     ProposalNotFoundError,
     SelfNomadError,
 )
@@ -318,13 +319,28 @@ class IntakeService:
         existing_id: UUID | None = None
         existing_status: ProposalStatus | None = None
         receipt = self.store.load_receipt(request.request_id)
-        if receipt is not None and receipt.status == "completed":
-            try:
-                record = self.proposal_store.load(receipt.proposal_id)
-                existing_id = record.proposal.id
-                existing_status = record.status
-            except SelfNomadError:
+        if receipt is not None:
+            if receipt.request_digest != digest:
+                findings.append(
+                    Finding(
+                        severity="blocker",
+                        code="INTAKE_ID_CONFLICT",
+                        message="request_id was reused with a different payload",
+                        path=None,
+                    )
+                )
+            else:
                 existing_id = receipt.proposal_id
+                try:
+                    record = self.proposal_store.load(receipt.proposal_id)
+                    existing_status = record.status
+                except SelfNomadError:
+                    existing_status = None
+                # Prefer receipt-bound tip for display when resuming.
+                if receipt.target_branch:
+                    branch = receipt.target_branch
+                if receipt.base_commit:
+                    base_commit = receipt.base_commit
         invalid = {"error", "blocker"}
         eligible = not any(item.severity in invalid for item in findings)
         return IntakePreviewResult(
@@ -344,6 +360,11 @@ class IntakeService:
 
     def submit(self, request: ProposalRequest) -> IntakeSubmitResult:
         preview = self.preview(request)
+        if any(item.code == "INTAKE_ID_CONFLICT" for item in preview.findings):
+            raise IntakeIdConflictError(
+                "request_id was reused with a different payload",
+                code="INTAKE_ID_CONFLICT",
+            )
         if not preview.eligible:
             blockers = [
                 f"{item.code}: {item.message}"
@@ -359,6 +380,15 @@ class IntakeService:
         self.store.ensure_writable()
         with FileLock(self.store.lock_path, timeout=30):
             return self._submit_locked(request, preview, digest)
+
+    def _assert_target_at_receipt(self, receipt: IntakeReceipt) -> None:
+        current = self.git.head(f"refs/heads/{receipt.target_branch}")
+        if current != receipt.base_commit:
+            raise IntakeTargetMovedError(
+                f"target branch {receipt.target_branch!r} moved from "
+                f"{receipt.base_commit} to {current}; use a new request_id for the new tip",
+                code="INTAKE_TARGET_MOVED",
+            )
 
     def _submit_locked(
         self,
@@ -381,6 +411,8 @@ class IntakeService:
             request_digest=digest,
             status="pending",
             proposal_id=proposal_id,
+            target_branch=preview.target_branch,
+            base_commit=preview.base_commit,
         )
         self.store.save_receipt(receipt)
         self._checkpoint("pending_receipt")
@@ -412,6 +444,15 @@ class IntakeService:
             # Crash after receipt, before draft: create reserved proposal.
             return self._execute_submission(request, preview, receipt)
 
+        if (
+            record.proposal.base_commit != receipt.base_commit
+            or record.proposal.target_branch != receipt.target_branch
+        ):
+            raise IntakeSubmissionFailedError(
+                "proposal record base/target does not match intake receipt",
+                code="INTAKE_SUBMISSION_FAILED",
+            )
+
         if record.status is ProposalStatus.DRAFT:
             return self._materialize_and_complete(
                 request, preview, receipt, record, reused=True
@@ -435,6 +476,9 @@ class IntakeService:
         receipt: IntakeReceipt,
     ) -> IntakeSubmitResult:
         try:
+            # Do not create a draft against a moved tip; leave receipt pending
+            # so recovery can proceed if the original ref becomes valid again.
+            self._assert_target_at_receipt(receipt)
             operations = self._stage_operations(request, digest=receipt.request_digest)
             self._checkpoint("staging")
             provenance = IntakeProvenance(
@@ -447,7 +491,8 @@ class IntakeService:
             record = self.proposals.create_draft(
                 reason=request.reason,
                 operations=operations,
-                target_branch=preview.target_branch,
+                target_branch=receipt.target_branch,
+                base_commit=receipt.base_commit,
                 proposer=Proposer(type="agent", identifier=request.source.agent_identifier),
                 source_adapter=request.source.runtime,
                 intake=provenance,
@@ -461,6 +506,9 @@ class IntakeService:
             # Simulate hard process exit: durable pending state remains as-is.
             raise
         except IntakeIdConflictError:
+            raise
+        except IntakeTargetMovedError:
+            # Keep pending receipt recoverable; do not mark failed.
             raise
         except Exception as exc:
             receipt.status = "failed"

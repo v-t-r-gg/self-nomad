@@ -25,6 +25,9 @@ class IntakeReceipt(BaseModel):
     # Always set when a pending receipt is first written so retries never
     # allocate a second proposal UUID for the same request_id + digest.
     proposal_id: UUID
+    # Frozen at first pending write: submission and recovery bind to this tip.
+    target_branch: str
+    base_commit: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     error: str | None = None

@@ -54,8 +54,13 @@ class ProposalService:
         source_adapter: str | None = None,
         intake: IntakeProvenance | None = None,
         proposal_id: UUID | None = None,
+        base_commit: str | None = None,
     ) -> ProposalRecord:
-        """Persist a draft proposal without materializing a worktree."""
+        """Persist a draft proposal without materializing a worktree.
+
+        When ``base_commit`` is provided (intake recovery), that exact commit is
+        recorded. Otherwise the current tip of the target branch is used.
+        """
         manifest = self.repository.load_manifest()
         policy = Policy.model_validate(
             load_yaml(contained_path(self.repository.root, manifest.policy, must_exist=True))
@@ -74,10 +79,13 @@ class ProposalService:
                     )
                 self._require_utf8_bytes(source.read_bytes(), path=operation.path)
         branch = target_branch or self.git.current_branch()
+        resolved_base = (
+            base_commit if base_commit is not None else self.git.head(f"refs/heads/{branch}")
+        )
         proposal = Proposal(
             id=proposal_id if proposal_id is not None else uuid4(),
             repository_id=manifest.self.id,
-            base_commit=self.git.head(f"refs/heads/{branch}"),
+            base_commit=resolved_base,
             target_branch=branch,
             source_adapter=source_adapter,
             proposer=proposer or Proposer(),
@@ -99,6 +107,7 @@ class ProposalService:
         source_adapter: str | None = None,
         intake: IntakeProvenance | None = None,
         proposal_id: UUID | None = None,
+        base_commit: str | None = None,
     ) -> ProposalRecord:
         record = self.create_draft(
             reason=reason,
@@ -108,6 +117,7 @@ class ProposalService:
             source_adapter=source_adapter,
             intake=intake,
             proposal_id=proposal_id,
+            base_commit=base_commit,
         )
         return self.materialize(record.proposal.id)
 

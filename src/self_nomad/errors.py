@@ -108,6 +108,10 @@ class IntakeIdConflictError(IntakeError):
     code = "INTAKE_ID_CONFLICT"
 
 
+class IntakeTargetMovedError(IntakeError):
+    code = "INTAKE_TARGET_MOVED"
+
+
 class IntakePolicyRejectedError(IntakeError):
     code = "INTAKE_POLICY_REJECTED"
 
