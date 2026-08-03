@@ -91,9 +91,10 @@ def test_subprocess_propose_uses_isolated_state(tmp_path: Path) -> None:
     proposal_id = body["result"]["proposal"]["id"]
 
     # Ensure state landed under the isolated tree, not the real home.
+    # Records are stored as compact UUID hex filenames.
+    compact = proposal_id.replace("-", "")
     xdg = Path(env["XDG_STATE_HOME"])
     local = Path(env["LOCALAPPDATA"])
-    found = list(xdg.rglob(f"{proposal_id}.json")) + list(local.rglob(f"{proposal_id}.json"))
+    found = list(xdg.rglob(f"{compact}.json")) + list(local.rglob(f"{compact}.json"))
     assert found, "proposal record missing from isolated state directories"
-    # Real home must not receive records (best-effort check when HOME was remapped).
-    assert env["HOME"] != os.path.expanduser("~") or True
+    assert Path(env["HOME"]).resolve() != Path.home().resolve() or os.name == "nt"

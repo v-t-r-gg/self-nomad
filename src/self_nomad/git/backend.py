@@ -28,10 +28,19 @@ class GitBackend:
             }
         )
         # Disable hooks without relying on a POSIX-only path string.
+        # Enable long paths on Windows so worktrees under deep user-state
+        # directories do not fail with "$GIT_DIR too big".
         hooks_path = "NUL" if os.name == "nt" else "/dev/null"
+        git_prefix = [
+            "git",
+            "-c",
+            f"core.hooksPath={hooks_path}",
+            "-c",
+            "core.longpaths=true",
+        ]
         try:
             completed = subprocess.run(
-                ["git", "-c", f"core.hooksPath={hooks_path}", *arguments],
+                [*git_prefix, *arguments],
                 cwd=cwd or self.root,
                 env=environment,
                 check=False,

@@ -12,7 +12,7 @@ from tests.helpers import isolated_state_env
 @pytest.fixture
 def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Redirect platformdirs and home-based paths into tmp_path for the test process."""
-    state_root = tmp_path / "isolated-state"
+    state_root = tmp_path / "i"
     env = isolated_state_env(state_root)
     for key in (
         "HOME",
@@ -20,6 +20,9 @@ def isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "XDG_STATE_HOME",
         "LOCALAPPDATA",
         "APPDATA",
+        "TMP",
+        "TEMP",
+        "TMPDIR",
         "GIT_TERMINAL_PROMPT",
         "GIT_CONFIG_NOSYSTEM",
         "GIT_CONFIG_GLOBAL",

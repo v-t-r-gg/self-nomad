@@ -100,8 +100,8 @@ class ProposalService:
             record = self.store.load(proposal_id)
             if record.status is not ProposalStatus.DRAFT:
                 raise ProposalStateError("only draft proposals can be materialized")
-            worktree = self.store.worktrees / str(proposal_id)
-            branch = f"self-nomad/proposal/{proposal_id}"
+            worktree = self.store.worktrees / proposal_id.hex
+            branch = f"self-nomad/proposal/{proposal_id.hex}"
             try:
                 self.git.worktree_add(worktree, branch, record.proposal.base_commit)
                 self._apply_operations(record.proposal.operations, worktree)
