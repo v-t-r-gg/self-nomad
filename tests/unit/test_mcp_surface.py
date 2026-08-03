@@ -109,6 +109,8 @@ def test_sanitize_proposal_omits_content_source(tmp_path: Path) -> None:
 
 
 def test_suggested_next_capability_aware() -> None:
+    from self_nomad.mcp_server.sanitize import suggested_next_for_intake
+
     mat = suggested_next_for_status(ProposalStatus.MATERIALIZED)
     assert any(
         step.get("channel") == "mcp" and step.get("tool") == "self_nomad_proposal_validate"
@@ -121,6 +123,10 @@ def test_suggested_next_capability_aware() -> None:
     assert not any(
         step.get("channel") == "mcp" and "approve" in json.dumps(step) for step in mat
     )
+    # No bare action strings.
+    for step in mat:
+        assert step.get("tool") not in {"submit", "validate", "approve", "apply"}
+        assert step.get("channel") in {"mcp", "cli", "cli_operator"}
 
     val = suggested_next_for_status(ProposalStatus.VALIDATED)
     assert all(step.get("channel") != "mcp" for step in val)
@@ -135,6 +141,16 @@ def test_suggested_next_capability_aware() -> None:
     assert suggested_next_for_status(ProposalStatus.REJECTED) == []
     assert suggested_next_for_status(ProposalStatus.STALE) == []
     assert suggested_next_for_status(ProposalStatus.FAILED) == []
+
+    eligible = suggested_next_for_intake(eligible=True, existing_status=None)
+    assert eligible == [
+        {
+            "channel": "mcp",
+            "tool": "self_nomad_intake_submit",
+            "description": "Submit this eligible request",
+        }
+    ]
+    assert suggested_next_for_intake(eligible=False, existing_status=None) == []
 
 
 def test_cursor_roundtrip() -> None:
@@ -209,21 +225,40 @@ def test_call_tool_maps_leaky_exceptions(
     assert "Bearer" not in serialized
 
 
-def test_is_missing_mcp_dependency_classification() -> None:
-    assert _is_missing_mcp_dependency(ImportError("No module named 'mcp'"))
-    assert _is_missing_mcp_dependency(ImportError("No module named 'mcp.server'"))
-    assert _is_missing_mcp_dependency(ImportError("No module named 'mcp_types'"))
-    named = ImportError("No module named 'mcp'")
-    named.name = "mcp"
-    assert _is_missing_mcp_dependency(named)
-    named_types = ImportError("No module named 'mcp_types'")
-    named_types.name = "mcp_types"
-    assert _is_missing_mcp_dependency(named_types)
+def test_is_missing_mcp_dependency_classification(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.util
 
-    other = ImportError("No module named 'self_nomad.does_not_exist'")
+    # Plain ImportError (not ModuleNotFoundError) is never "missing extra",
+    # even with a misleading message.
+    assert not _is_missing_mcp_dependency(ImportError("No module named 'mcp'"))
+
+    absent = ModuleNotFoundError("No module named 'mcp'")
+    absent.name = "mcp"
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    assert _is_missing_mcp_dependency(absent)
+
+    child = ModuleNotFoundError("No module named 'mcp.server'")
+    child.name = "mcp.server"
+    assert _is_missing_mcp_dependency(child)
+
+    types_absent = ModuleNotFoundError("No module named 'mcp_types'")
+    types_absent.name = "mcp_types"
+    assert _is_missing_mcp_dependency(types_absent)
+
+    # Root package present → not treated as missing optional extra
+    # (incompatible / broken install path).
+    class _Spec:
+        pass
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: _Spec())
+    child_while_root_present = ModuleNotFoundError("No module named 'mcp.broken'")
+    child_while_root_present.name = "mcp.broken"
+    assert not _is_missing_mcp_dependency(child_while_root_present)
+
+    other = ModuleNotFoundError("No module named 'self_nomad.does_not_exist'")
     other.name = "self_nomad.does_not_exist"
     assert not _is_missing_mcp_dependency(other)
-    assert not _is_missing_mcp_dependency(ImportError("circular import in self_nomad.mcp_server"))
+
     assert not _is_missing_mcp_dependency(ValueError("No module named 'mcp'"))
     assert "self-nomad[mcp]" in MISSING_MCP_MESSAGE
 
@@ -252,3 +287,31 @@ def test_production_mcp_sources_avoid_private_sdk_members() -> None:
         text = path.read_text(encoding="utf-8")
         for token in banned:
             assert token not in text, f"{path} references private SDK member {token}"
+
+
+def test_safe_path_never_reflects_caller_keys() -> None:
+    from self_nomad.mcp_server.arguments import safe_path_from_loc, validate_tool_arguments
+
+    marker = "Bearer_sk-live-SECRET"
+    assert safe_path_from_loc((marker,), base=None) == "$"
+    assert safe_path_from_loc((marker,), base="request") == "request"
+    assert (
+        safe_path_from_loc(("source", marker), base="request") == "request.source"
+    )
+    assert (
+        safe_path_from_loc(("operations", 0, marker), base="request")
+        == "request.operations.0"
+    )
+    assert (
+        safe_path_from_loc(("operations", 0, "path"), base="request")
+        == "request.operations.0.path"
+    )
+    assert safe_path_from_loc(("schema_version",), base="request") == "request.schema_version"
+
+    errors = validate_tool_arguments(
+        "self_nomad_proposal_list",
+        {marker: True},
+    )
+    assert errors is not None
+    assert errors[0].path == "$"
+    assert marker not in json.dumps([e.model_dump() for e in errors])

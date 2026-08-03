@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -17,20 +16,13 @@ from self_nomad.domain import ProposalStatus
 from self_nomad.errors import RepositoryNotFoundError, SelfNomadError
 from self_nomad.intake.models import ProposalRequest
 from self_nomad.mcp_server.errors import (
-    McpConfigurationError,
     McpInvalidArgumentError,
     McpRepositoryUnavailableError,
 )
 from self_nomad.mcp_server.middleware import EnvelopeBoundaryMiddleware
 from self_nomad.mcp_server.models import ProposalIdInput, ProposalListInput, ValidateInput
-from self_nomad.mcp_server.tools import (
-    EXPECTED_TOOL_NAMES,
-    ToolContext,
-    call_tool,
-    fail,
-)
-
-logger = logging.getLogger("self_nomad.mcp")
+from self_nomad.mcp_server.registry import ToolRegistrar
+from self_nomad.mcp_server.tools import ToolContext, call_tool, fail
 
 
 def open_fixed_repository(repo: Path) -> SelfNomad:
@@ -73,21 +65,9 @@ def build_server(repo: Path) -> MCPServer:
         ),
     )
 
-    # Self-owned registration accounting (no private SDK managers).
-    registered: list[str] = []
+    tools = ToolRegistrar(server)
 
-    def _register(name: str) -> None:
-        if name not in EXPECTED_TOOL_NAMES:
-            raise McpConfigurationError(
-                f"refusing to register tool outside the allow-list: {name}"
-            )
-        if name in registered:
-            raise McpConfigurationError(f"duplicate tool registration: {name}")
-        registered.append(name)
-
-    _register("self_nomad_repository_status")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_repository_status",
         description=(
             "Read-only status for the fixed self repository (identity, Git HEAD, "
@@ -100,14 +80,11 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def repository_status() -> dict[str, Any]:
         return call_tool(ctx, "self_nomad_repository_status", ctx.status)
 
-    _register("self_nomad_repository_validate")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_repository_validate",
         description=(
             "Run structural repository validation. Repository tests remain "
@@ -119,7 +96,6 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def repository_validate(strict: bool = True) -> dict[str, Any]:
         return call_tool(
@@ -129,9 +105,7 @@ def build_server(repo: Path) -> MCPServer:
             ValidateInput(strict=strict),
         )
 
-    _register("self_nomad_intake_preview")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_intake_preview",
         description=(
             "Zero-write preview of a ProposalRequest v1. Never creates proposals "
@@ -143,14 +117,11 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def intake_preview(request: ProposalRequest) -> dict[str, Any]:
         return call_tool(ctx, "self_nomad_intake_preview", ctx.intake_preview, request)
 
-    _register("self_nomad_intake_submit")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_intake_submit",
         description=(
             "Submit an idempotent ProposalRequest v1 and materialize an isolated "
@@ -164,14 +135,11 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def intake_submit(request: ProposalRequest) -> dict[str, Any]:
         return call_tool(ctx, "self_nomad_intake_submit", ctx.intake_submit, request)
 
-    _register("self_nomad_proposal_list")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_proposal_list",
         description=(
             "List sanitized proposal summaries with optional status filter, "
@@ -184,7 +152,6 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def proposal_list(
         status: str | None = None,
@@ -209,9 +176,7 @@ def build_server(repo: Path) -> MCPServer:
             )
         return call_tool(ctx, "self_nomad_proposal_list", ctx.proposal_list, payload)
 
-    _register("self_nomad_proposal_get")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_proposal_get",
         description=(
             "Fetch a sanitized proposal review record by id. Omits content_source, "
@@ -223,7 +188,6 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def proposal_get(proposal_id: UUID) -> dict[str, Any]:
         return call_tool(
@@ -233,9 +197,7 @@ def build_server(repo: Path) -> MCPServer:
             ProposalIdInput(proposal_id=proposal_id),
         )
 
-    _register("self_nomad_proposal_validate")
-
-    @server.tool(
+    @tools.tool(
         name="self_nomad_proposal_validate",
         description=(
             "Strictly validate a materialized proposal (complete-tree verification, "
@@ -248,7 +210,6 @@ def build_server(repo: Path) -> MCPServer:
             idempotent_hint=True,
             open_world_hint=False,
         ),
-        structured_output=True,
     )
     def proposal_validate(proposal_id: UUID) -> dict[str, Any]:
         return call_tool(
@@ -257,6 +218,8 @@ def build_server(repo: Path) -> MCPServer:
             ctx.proposal_validate,
             ProposalIdInput(proposal_id=proposal_id),
         )
+
+    tools.finalize()
 
     @server.resource(
         "self-nomad://schemas/proposal-request/v1",
@@ -270,10 +233,6 @@ def build_server(repo: Path) -> MCPServer:
             .joinpath("proposal-request-v1.schema.json")
             .read_text(encoding="utf-8")
         )
-
-    if sorted(registered) != sorted(EXPECTED_TOOL_NAMES):
-        logger.error("tool registry mismatch: %s != %s", registered, list(EXPECTED_TOOL_NAMES))
-        raise McpConfigurationError("MCP tool registry does not match the expected allow-list")
 
     # Enforce envelope contract for recognized-tool argument failures.
     server.middleware.append(EnvelopeBoundaryMiddleware())

@@ -19,7 +19,13 @@ from self_nomad.mcp_server.models import (
     ToolEnvelope,
     ValidateInput,
 )
-from self_nomad.mcp_server.sanitize import decode_cursor, encode_cursor, sanitize_proposal
+from self_nomad.mcp_server.sanitize import (
+    decode_cursor,
+    encode_cursor,
+    sanitize_intake_preview,
+    sanitize_intake_submit,
+    sanitize_proposal,
+)
 
 logger = logging.getLogger("self_nomad.mcp")
 
@@ -138,11 +144,11 @@ class ToolContext:
 
     def intake_preview(self, request: ProposalRequest) -> dict[str, Any]:
         preview = self.app.intake().preview(request)
-        return preview.model_dump(mode="json")
+        return sanitize_intake_preview(preview.model_dump(mode="json"))
 
     def intake_submit(self, request: ProposalRequest) -> dict[str, Any]:
         result = self.app.intake().submit(request)
-        return result.model_dump(mode="json")
+        return sanitize_intake_submit(result.model_dump(mode="json"))
 
     def proposal_list(self, data: ProposalListInput) -> dict[str, Any]:
         records = self.app.proposals().store.list()

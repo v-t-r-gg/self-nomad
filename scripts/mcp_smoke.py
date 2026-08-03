@@ -120,7 +120,14 @@ def isolated_env(state_root: Path) -> dict[str, str]:
     return env
 
 
-async def _probe_mcp(mcp_bin: Path, repo: Path, artifact: str, env: dict[str, str]) -> None:
+async def _probe_mcp(
+    mcp_bin: Path,
+    repo: Path,
+    artifact: str,
+    env: dict[str, str],
+    *,
+    expected_version: str,
+) -> None:
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -133,7 +140,17 @@ async def _probe_mcp(mcp_bin: Path, repo: Path, artifact: str, env: dict[str, st
         stdio_client(params) as (read, write),
         ClientSession(read, write) as client,
     ):
-        await client.initialize()
+        initialized = await client.initialize()
+        server_info = initialized.server_info
+        if server_info.name != "self-nomad":
+            raise SmokeError(
+                f"[{artifact}] server_info.name {server_info.name!r} != 'self-nomad'"
+            )
+        if server_info.version != expected_version:
+            raise SmokeError(
+                f"[{artifact}] server_info.version {server_info.version!r} != "
+                f"{expected_version!r}"
+            )
         tools = await client.list_tools()
         names = {t.name for t in tools.tools}
         if names != EXPECTED_TOOLS:
@@ -150,6 +167,12 @@ async def _probe_mcp(mcp_bin: Path, repo: Path, artifact: str, env: dict[str, st
         if status.structured_content["result"]["repository"]["name"] != "mcp-smoke":
             raise SmokeError(
                 f"[{artifact}] unexpected repository name: {status.structured_content}"
+            )
+        package_version = status.structured_content["result"].get("package_version")
+        if package_version != expected_version:
+            raise SmokeError(
+                f"[{artifact}] status package_version {package_version!r} != "
+                f"{expected_version!r}"
             )
         resources = await client.list_resources()
         uris = [str(r.uri) for r in resources.resources]
@@ -266,7 +289,15 @@ def smoke_artifact(artifact: Path, work_root: Path) -> None:
     )
 
     try:
-        asyncio.run(_probe_mcp(mcp_bin, repo.resolve(), name, env))
+        asyncio.run(
+            _probe_mcp(
+                mcp_bin,
+                repo.resolve(),
+                name,
+                env,
+                expected_version=expected_version,
+            )
+        )
     except SmokeError:
         raise
     except Exception as exc:  # noqa: BLE001

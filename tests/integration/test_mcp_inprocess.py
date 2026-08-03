@@ -49,7 +49,7 @@ def _request(request_id: str = "mcp:memory:1", content: str | None = None) -> di
 
 
 @asynccontextmanager
-async def _session(root: Path) -> AsyncIterator[Any]:
+async def _session(root: Path) -> AsyncIterator[tuple[Any, Any]]:
     from mcp import ClientSession
     from mcp.client._memory import InMemoryTransport
 
@@ -58,8 +58,8 @@ async def _session(root: Path) -> AsyncIterator[Any]:
         InMemoryTransport(server, raise_exceptions=True) as (read, write),
         ClientSession(read, write) as client,
     ):
-        await client.initialize()
-        yield client
+        initialized = await client.initialize()
+        yield client, initialized
 
 
 def _body(result: Any) -> dict[str, Any]:
@@ -68,8 +68,32 @@ def _body(result: Any) -> dict[str, Any]:
     return result.structured_content
 
 
+def _assert_structured_actions(steps: list[Any]) -> None:
+    bare = {"submit", "validate", "approve", "apply"}
+    for step in steps:
+        assert isinstance(step, dict)
+        assert step.get("channel") in {"mcp", "cli", "cli_operator"}
+        if step.get("channel") == "mcp":
+            assert str(step.get("tool", "")).startswith("self_nomad_")
+        assert step.get("tool") not in bare
+        assert step.get("command") not in bare
+        # Command may contain approve/apply as CLI verbs but not as bare strings only.
+        if "command" in step:
+            assert step["command"].startswith("self-nomad ")
+
+
+async def test_server_identity_from_initialize(tmp_path: Path) -> None:
+    from self_nomad import __version__
+
+    async with _session(_repo(tmp_path)) as (client, initialized):
+        assert initialized.server_info.name == "self-nomad"
+        assert initialized.server_info.version == __version__
+        tools = await client.list_tools()
+        assert len(tools.tools) == 7
+
+
 async def test_tool_discovery_exact_set(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         tools = await client.list_tools()
         names = sorted(tool.name for tool in tools.tools)
         assert names == sorted(EXPECTED_TOOL_NAMES)
@@ -98,7 +122,7 @@ async def test_tool_discovery_exact_set(tmp_path: Path) -> None:
 
 
 async def test_repository_status_and_validate(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         status = await client.call_tool("self_nomad_repository_status", {})
         body = _body(status)
         assert body["ok"] is True
@@ -116,7 +140,7 @@ async def test_repository_status_and_validate(tmp_path: Path) -> None:
 
 
 async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         request = _request()
 
         preview = await client.call_tool(
@@ -126,6 +150,14 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
         assert body["ok"] is True
         assert body["result"]["eligible"] is True
         assert "Prefers MCP" not in json.dumps(body)
+        _assert_structured_actions(body["result"]["suggested_next"])
+        assert body["result"]["suggested_next"] == [
+            {
+                "channel": "mcp",
+                "tool": "self_nomad_intake_submit",
+                "description": "Submit this eligible request",
+            }
+        ]
 
         submitted = await client.call_tool(
             "self_nomad_intake_submit", {"request": request}
@@ -134,6 +166,11 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
         assert body["ok"] is True
         proposal_id = body["result"]["proposal_id"]
         assert body["result"]["reused"] is False
+        _assert_structured_actions(body["result"]["suggested_next"])
+        assert any(
+            s.get("tool") == "self_nomad_proposal_validate"
+            for s in body["result"]["suggested_next"]
+        )
 
         again = await client.call_tool(
             "self_nomad_intake_submit", {"request": request}
@@ -141,6 +178,7 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
         body = _body(again)
         assert body["result"]["reused"] is True
         assert body["result"]["proposal_id"] == proposal_id
+        _assert_structured_actions(body["result"]["suggested_next"])
 
         listed = await client.call_tool(
             "self_nomad_proposal_list", {"limit": 10, "status": "materialized"}
@@ -148,6 +186,8 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
         body = _body(listed)
         assert body["ok"] is True
         assert body["result"]["count"] >= 1
+        for item in body["result"]["items"]:
+            _assert_structured_actions(item["suggested_next"])
 
         got = await client.call_tool(
             "self_nomad_proposal_get", {"proposal_id": proposal_id}
@@ -158,6 +198,7 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
         assert "content_source" not in json.dumps(body)
         assert body["result"]["status"] == "materialized"
         steps = body["result"]["suggested_next"]
+        _assert_structured_actions(steps)
         assert any(s.get("tool") == "self_nomad_proposal_validate" for s in steps)
         assert any(s.get("channel") == "cli_operator" for s in steps)
 
@@ -167,6 +208,8 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
         body = _body(validated)
         assert body["ok"] is True
         assert body["result"]["status"] == "validated"
+        _assert_structured_actions(body["result"]["suggested_next"])
+        assert all(s.get("channel") == "cli_operator" for s in body["result"]["suggested_next"])
 
         again_val = await client.call_tool(
             "self_nomad_proposal_validate", {"proposal_id": proposal_id}
@@ -175,7 +218,7 @@ async def test_intake_preview_submit_list_get_validate(tmp_path: Path) -> None:
 
 
 async def test_schema_resource(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         resources = await client.list_resources()
         uris = [str(r.uri) for r in resources.resources]
         assert "self-nomad://schemas/proposal-request/v1" in uris
@@ -189,7 +232,7 @@ async def test_schema_resource(tmp_path: Path) -> None:
 
 
 async def test_stable_errors_for_missing_proposal(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         missing = str(uuid4())
         got = await client.call_tool(
             "self_nomad_proposal_get", {"proposal_id": missing}
@@ -202,7 +245,7 @@ async def test_stable_errors_for_missing_proposal(tmp_path: Path) -> None:
 
 async def test_concurrent_identical_submissions(tmp_path: Path) -> None:
     request = _request("mcp:concurrent:1")
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         results = await asyncio.gather(
             client.call_tool("self_nomad_intake_submit", {"request": request}),
             client.call_tool("self_nomad_intake_submit", {"request": request}),
@@ -214,7 +257,7 @@ async def test_concurrent_identical_submissions(tmp_path: Path) -> None:
 
 
 async def test_preview_does_not_create_proposals(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         request = _request("mcp:preview-only:1")
         preview = await client.call_tool(
             "self_nomad_intake_preview", {"request": request}
@@ -225,7 +268,7 @@ async def test_preview_does_not_create_proposals(tmp_path: Path) -> None:
 
 
 async def test_id_conflict_error(tmp_path: Path) -> None:
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         request = _request("mcp:conflict:1")
         first = await client.call_tool(
             "self_nomad_intake_submit", {"request": request}
@@ -245,14 +288,14 @@ async def test_id_conflict_error(tmp_path: Path) -> None:
 async def test_invalid_arguments_use_envelope(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     secret = "Bearer sk-live-SHOULD-NOT-LEAK"
-    async with _session(root) as client:
+    async with _session(root) as (client, _init):
         cases: list[tuple[str, dict[str, Any], str]] = [
             ("self_nomad_proposal_get", {"proposal_id": "not-a-uuid"}, "proposal_id"),
             ("self_nomad_proposal_list", {"status": "nope"}, "status"),
             ("self_nomad_proposal_list", {"limit": -1}, "limit"),
             ("self_nomad_proposal_list", {"limit": 9999}, "limit"),
             ("self_nomad_proposal_list", {"cursor": "%%%"}, "cursor"),
-            ("self_nomad_proposal_list", {"extra_field": True}, "extra_field"),
+            ("self_nomad_proposal_list", {"extra_field": True}, "$"),
             (
                 "self_nomad_intake_preview",
                 {
@@ -290,7 +333,7 @@ async def test_invalid_arguments_use_envelope(tmp_path: Path) -> None:
                         "extra_nested": 1,
                     }
                 },
-                "request.extra_nested",
+                "request",
             ),
             (
                 "self_nomad_intake_preview",
@@ -316,7 +359,10 @@ async def test_invalid_arguments_use_envelope(tmp_path: Path) -> None:
         for tool, args, path_hint in cases:
             result = await client.call_tool(tool, args)
             body = _body(result)
-            serialized = json.dumps(body)
+            text = "".join(
+                getattr(block, "text", "") or "" for block in (result.content or [])
+            )
+            serialized = json.dumps(body) + text
             assert body["ok"] is False, (tool, args, body)
             assert body["schema_version"] == 1
             assert body["tool"] == tool
@@ -328,19 +374,102 @@ async def test_invalid_arguments_use_envelope(tmp_path: Path) -> None:
             assert "input_value" not in serialized
             assert "validation error" not in serialized.lower()
             assert "not-a-uuid" not in serialized
-            # Path should be present for most cases (best-effort prefix match).
             err_path = body["errors"][0].get("path")
-            if path_hint and err_path:
-                assert path_hint.split(".")[0] in err_path or path_hint in err_path
+            assert err_path == path_hint or (
+                path_hint != "$" and err_path is not None and path_hint in err_path
+            ), (tool, path_hint, err_path)
 
         # Malformed args must not create state.
         listed = await client.call_tool("self_nomad_proposal_list", {"limit": 50})
         assert _body(listed)["result"]["count"] == 0
 
 
+async def test_sensitive_keys_never_appear_in_error_paths(tmp_path: Path) -> None:
+    marker = "Bearer_sk-live-SECRET"
+    async with _session(_repo(tmp_path)) as (client, _init):
+        cases: list[tuple[str, dict[str, Any]]] = [
+            ("self_nomad_proposal_list", {marker: True}),
+            (
+                "self_nomad_intake_preview",
+                {
+                    "request": {
+                        "schema_version": 1,
+                        "request_id": "x",
+                        "reason": "r",
+                        "source": {"runtime": "a", "agent_identifier": "b"},
+                        "operations": [
+                            {
+                                "kind": "replace",
+                                "path": "memory/MEMORY.md",
+                                "content": "# ok\n",
+                            }
+                        ],
+                        marker: True,
+                    }
+                },
+            ),
+            (
+                "self_nomad_intake_preview",
+                {
+                    "request": {
+                        "schema_version": 1,
+                        "request_id": "x",
+                        "reason": "r",
+                        "source": {
+                            "runtime": "a",
+                            "agent_identifier": "b",
+                            marker: True,
+                        },
+                        "operations": [
+                            {
+                                "kind": "replace",
+                                "path": "memory/MEMORY.md",
+                                "content": "# ok\n",
+                            }
+                        ],
+                    }
+                },
+            ),
+            (
+                "self_nomad_intake_preview",
+                {
+                    "request": {
+                        "schema_version": 1,
+                        "request_id": "x",
+                        "reason": "r",
+                        "source": {"runtime": "a", "agent_identifier": "b"},
+                        "operations": [
+                            {
+                                "kind": "replace",
+                                "path": "memory/MEMORY.md",
+                                "content": "# ok\n",
+                                marker: True,
+                            }
+                        ],
+                    }
+                },
+            ),
+        ]
+        for tool, args in cases:
+            result = await client.call_tool(tool, args)
+            body = _body(result)
+            text = "".join(
+                getattr(block, "text", "") or "" for block in (result.content or [])
+            )
+            serialized = json.dumps(body) + text
+            assert body["ok"] is False
+            assert body["errors"][0]["code"] == "MCP_INVALID_ARGUMENT"
+            assert marker not in serialized
+            assert "sk-live" not in serialized
+            err_path = body["errors"][0].get("path") or ""
+            assert marker not in err_path
+        listed = await client.call_tool("self_nomad_proposal_list", {})
+        assert _body(listed)["result"]["count"] == 0
+
+
 async def test_invalid_request_with_sensitive_marker_no_state(tmp_path: Path) -> None:
     marker = "SECRET_MARKER_TOKEN=should-never-appear"
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         result = await client.call_tool(
             "self_nomad_intake_submit",
             {
@@ -370,7 +499,7 @@ async def test_invalid_request_with_sensitive_marker_no_state(tmp_path: Path) ->
 async def test_server_version_matches_package(tmp_path: Path) -> None:
     from self_nomad import __version__
 
-    async with _session(_repo(tmp_path)) as client:
+    async with _session(_repo(tmp_path)) as (client, _init):
         # initialize already done; list tools to keep session busy
         tools = await client.list_tools()
         assert tools.tools

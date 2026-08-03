@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import sys
 from pathlib import Path
@@ -23,31 +24,24 @@ def _configure_logging() -> None:
 
 
 def _is_missing_mcp_dependency(exc: BaseException) -> bool:
-    """Return True only when the optional mcp / mcp_types package is absent."""
-    if not isinstance(exc, ImportError):
+    """Return True only when the optional mcp / mcp_types package is absent.
+
+    Classification requires :class:`ModuleNotFoundError` with ``exc.name``
+    identifying ``mcp``, ``mcp_types``, or a child module, and the root package
+    not being importable. Message-text matching is intentionally not used.
+    """
+    if not isinstance(exc, ModuleNotFoundError):
         return False
     name = getattr(exc, "name", None)
-    if isinstance(name, str) and name:
-        root = name.split(".", 1)[0]
-        if root in {"mcp", "mcp_types"}:
-            return True
-    # Fall back to the standard "No module named '…'" form without matching
-    # unrelated ImportError messages from packaging defects.
-    text = str(exc)
-    lowered = text.lower()
-    if "no module named" not in lowered:
+    if not isinstance(name, str) or not name:
         return False
-    return any(
-        marker in lowered
-        for marker in (
-            "no module named 'mcp'",
-            'no module named "mcp"',
-            "no module named 'mcp_types'",
-            'no module named "mcp_types"',
-            "no module named 'mcp.",
-            'no module named "mcp.',
-        )
-    )
+    root = name.split(".", 1)[0]
+    if root not in {"mcp", "mcp_types"}:
+        return False
+    try:
+        return importlib.util.find_spec(root) is None
+    except (ImportError, ValueError, ModuleNotFoundError):
+        return True
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -107,12 +107,21 @@ absolute staging/worktree paths, raw receipts, Git stderr, or exception
 
 | Channel | When | Shape |
 | --- | --- | --- |
-| Recognized-tool envelope | Invalid arguments or mapped domain failures on the seven tools | `ok: false` envelope above |
+| Invalid-argument envelope | Malformed args on the seven tools | `ok: false`, code `MCP_INVALID_ARGUMENT` |
+| Domain / mapped envelope | Known proposal/intake failures | `ok: false`, stable public codes |
+| Sanitized internal envelope | Residual SDK/`is_error` after args validated | `ok: false`, code `MCP_INTERNAL_ERROR` |
 | MCP protocol error | Unknown tool name, transport/handshake failures | Standard MCP error (outside the registry) |
 | stderr diagnostics | Operator-facing startup/import/internal logs | Plain text; never on stdout |
 
 Malformed arguments for recognized tools are validated before handler
 execution and always return the envelope (not raw SDK validation text).
+Error `path` values use only known schema field names and numeric indexes;
+caller-supplied property names are never reflected.
+
+Every MCP `suggested_next` entry is a structured object (`channel` plus
+`tool` or `command`), never a bare `submit` / `validate` / `approve` /
+`apply` string. Native tools are registered only through the authoritative
+seven-tool registrar.
 
 ## Resource
 

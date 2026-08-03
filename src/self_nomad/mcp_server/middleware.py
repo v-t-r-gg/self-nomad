@@ -10,7 +10,8 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp_types import CallToolResult, TextContent
 
 from self_nomad.mcp_server.arguments import validate_tool_arguments
-from self_nomad.mcp_server.tools import EXPECTED_TOOL_NAMES, fail_argument_errors
+from self_nomad.mcp_server.models import ErrorItem
+from self_nomad.mcp_server.tools import EXPECTED_TOOL_NAMES, envelope, fail_argument_errors
 
 logger = logging.getLogger("self_nomad.mcp")
 
@@ -40,15 +41,23 @@ def _envelope_result(body: dict[str, Any]) -> CallToolResult:
     )
 
 
+def _content_preview(result: CallToolResult) -> str:
+    parts: list[str] = []
+    for block in result.content or []:
+        text = getattr(block, "text", None)
+        if isinstance(text, str):
+            parts.append(text)
+    return "\n".join(parts)[:2000]
+
+
 class EnvelopeBoundaryMiddleware:
     """Validate recognized-tool arguments and sanitize residual protocol errors.
 
     * Invalid arguments for tools in :data:`EXPECTED_TOOL_NAMES` return the
-      self-nomad envelope (``ok: false``, ``MCP_INVALID_ARGUMENT``) instead of
-      raw SDK / Pydantic text.
-    * Residual ``is_error`` tool results for recognized tools are rewritten to
-      a generic envelope so stack traces, paths, and input values never leave
-      the server over the tool channel.
+      self-nomad envelope (``ok: false``, ``MCP_INVALID_ARGUMENT``).
+    * Residual ``is_error`` tool results after arguments passed validation are
+      rewritten as ``MCP_INTERNAL_ERROR`` (SDK/handler defects), never with
+      raw text payloads.
     * Unknown tool names are left to the MCP protocol layer.
     """
 
@@ -75,17 +84,18 @@ class EnvelopeBoundaryMiddleware:
             and result.is_error
         ):
             logger.error(
-                "recognized tool %s returned protocol-level error; rewriting envelope",
+                "recognized tool %s returned protocol-level error after argument "
+                "validation; rewriting as internal error: %s",
                 tool_name,
+                _content_preview(result),
             )
-            from self_nomad.mcp_server.models import ErrorItem
-
-            body = fail_argument_errors(
+            body = envelope(
                 tool_name,
-                [
+                ok=False,
+                errors=[
                     ErrorItem(
-                        code="MCP_INVALID_ARGUMENT",
-                        message="invalid tool arguments",
+                        code="MCP_INTERNAL_ERROR",
+                        message="an internal error occurred",
                         path=None,
                     )
                 ],

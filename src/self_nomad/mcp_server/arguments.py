@@ -1,7 +1,7 @@
 """Safe validation of MCP tool arguments before SDK type coercion.
 
 Produces envelope-ready error items without echoing invalid values, inline
-content, or Pydantic ``input_value`` representations.
+content, Pydantic ``input_value`` text, or caller-controlled property names.
 """
 
 from __future__ import annotations
@@ -28,27 +28,131 @@ TOOL_ARGUMENT_KEYS: dict[str, frozenset[str]] = {
     "self_nomad_proposal_validate": frozenset({"proposal_id"}),
 }
 
+# Known nested schema field names only (never emit caller-supplied keys).
+_REQUEST_FIELDS = frozenset(
+    {
+        "schema_version",
+        "request_id",
+        "reason",
+        "target_branch",
+        "source",
+        "operations",
+    }
+)
+_SOURCE_FIELDS = frozenset({"runtime", "agent_identifier", "correlation_id"})
+_OPERATION_FIELDS = frozenset(
+    {
+        "kind",
+        "path",
+        "content",
+        "expected_before_sha256",
+        "expected_after_sha256",
+    }
+)
+_LIST_FIELDS = frozenset({"status", "limit", "cursor"})
+_GENERIC_ROOT = "$"
+
 
 def _error(message: str, *, path: str | None = None) -> ErrorItem:
     return ErrorItem(code="MCP_INVALID_ARGUMENT", message=message, path=path)
 
 
-def _loc_path(prefix: str | None, loc: tuple[Any, ...]) -> str | None:
+def safe_path_from_loc(
+    loc: tuple[Any, ...],
+    *,
+    base: str | None = None,
+    schema: str = "request",
+) -> str | None:
+    """Build a path from known field names and numeric indexes only.
+
+    Unknown property names supplied by the caller are never serialized. When an
+    unknown segment appears, the path stops at the last known parent (or ``$``
+    for a completely unknown top-level name).
+    """
     parts: list[str] = []
-    if prefix:
-        parts.append(prefix)
+    if base is not None:
+        parts.append(base)
+
+    # Context stack tracks which known object schema we are inside.
+    # After ``base="request"`` we start in the request schema.
+    context: str | None = base if base in {"request"} else None
+    if schema == "list" and base is None:
+        context = "list"
+    elif schema == "tool" and base is None:
+        context = "tool"
+
     for item in loc:
-        parts.append(str(item))
+        if isinstance(item, int):
+            # List indexes are safe (not caller-controlled names).
+            parts.append(str(item))
+            continue
+        if not isinstance(item, str):
+            break
+
+        if context == "request":
+            if item not in _REQUEST_FIELDS:
+                break
+            parts.append(item)
+            if item == "source":
+                context = "source"
+            elif item == "operations":
+                context = "operation"
+            continue
+
+        if context == "source":
+            if item not in _SOURCE_FIELDS:
+                break
+            parts.append(item)
+            continue
+
+        if context == "operation":
+            if item not in _OPERATION_FIELDS:
+                break
+            parts.append(item)
+            continue
+
+        if context == "list":
+            if item not in _LIST_FIELDS:
+                break
+            parts.append(item)
+            continue
+
+        if context == "tool":
+            # Flat tool args without a request envelope.
+            allowed = _LIST_FIELDS | {"strict", "proposal_id", "request"}
+            if item not in allowed:
+                break
+            parts.append(item)
+            if item == "request":
+                context = "request"
+            continue
+
+        # No context: only accept known root tokens.
+        if item == "request":
+            parts.append(item)
+            context = "request"
+            continue
+        if item in _LIST_FIELDS | {"strict", "proposal_id"}:
+            parts.append(item)
+            continue
+        # Unknown top-level name.
+        return _GENERIC_ROOT
+
     if not parts:
-        return None
+        return _GENERIC_ROOT if base is None else base
     return ".".join(parts)
 
 
-def _validation_errors(exc: ValidationError, *, prefix: str | None = None) -> list[ErrorItem]:
+def _validation_errors(
+    exc: ValidationError,
+    *,
+    base: str | None = None,
+    schema: str = "request",
+) -> list[ErrorItem]:
     """Map Pydantic errors to safe items (no input_value, no raw content)."""
     items: list[ErrorItem] = []
     for err in exc.errors():
-        path = _loc_path(prefix, tuple(err.get("loc", ())))
+        path = safe_path_from_loc(tuple(err.get("loc", ())), base=base, schema=schema)
         err_type = str(err.get("type", ""))
         if err_type == "extra_forbidden":
             items.append(_error("unexpected field", path=path))
@@ -58,7 +162,12 @@ def _validation_errors(exc: ValidationError, *, prefix: str | None = None) -> li
             items.append(_error("unsupported or invalid field value", path=path))
         elif err_type in {"uuid_parsing", "uuid_type"}:
             items.append(_error("invalid proposal_id", path=path or "proposal_id"))
-        elif err_type in {"greater_than_equal", "less_than_equal", "int_parsing", "int_type"}:
+        elif err_type in {
+            "greater_than_equal",
+            "less_than_equal",
+            "int_parsing",
+            "int_type",
+        }:
             items.append(_error("invalid numeric field", path=path))
         elif err_type in {"string_type", "string_too_short", "string_too_long"}:
             items.append(_error("invalid string field", path=path))
@@ -81,9 +190,10 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any] | None) -> list
 
     args = arguments if isinstance(arguments, dict) else {}
     allowed = TOOL_ARGUMENT_KEYS[tool]
-    unknown = sorted(set(args) - allowed)
+    unknown = set(args) - allowed
     if unknown:
-        return [_error("unexpected argument", path=unknown[0])]
+        # Never put the caller-supplied key name in the response path.
+        return [_error("unexpected argument", path=_GENERIC_ROOT)]
 
     if tool == "self_nomad_repository_status":
         return None
@@ -122,7 +232,6 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any] | None) -> list
                 decode_cursor(args["cursor"])
             except ValueError:
                 return [_error("invalid pagination cursor", path="cursor")]
-        # Full model check for any remaining constraints.
         try:
             status_enum = None
             if args.get("status") is not None:
@@ -133,7 +242,7 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any] | None) -> list
                 cursor=args.get("cursor"),
             )
         except ValidationError as exc:
-            return _validation_errors(exc)
+            return _validation_errors(exc, schema="list")
         except (ValueError, TypeError):
             return [_error("invalid tool arguments")]
         return None
@@ -147,7 +256,7 @@ def validate_tool_arguments(tool: str, arguments: dict[str, Any] | None) -> list
         try:
             ProposalRequest.model_validate(request)
         except ValidationError as exc:
-            return _validation_errors(exc, prefix="request")
+            return _validation_errors(exc, base="request", schema="request")
         return None
 
     return [_error("invalid tool arguments")]
