@@ -17,7 +17,9 @@ from self_nomad.errors import (
     IntakeIdConflictError,
     IntakePolicyRejectedError,
     IntakeRequestTooLargeError,
+    IntakeSubmissionFailedError,
     IntakeTargetMovedError,
+    ProposalStaleError,
 )
 from self_nomad.filesystem import sha256_file
 from self_nomad.intake import IntakeService, ProposalRequest, load_proposal_request
@@ -598,3 +600,138 @@ def test_completed_reuse_ignores_later_branch_movement(tmp_path: Path) -> None:
     assert second.proposal_id == first.proposal_id
     record = app.proposals(state_root=state).store.load(second.proposal_id)
     assert record.proposal.base_commit == frozen
+
+
+def test_completed_reuse_after_target_file_replaced_or_deleted(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="reuse:file-change")
+    first = app.intake(state_root=state).submit(load_proposal_request(raw))
+    frozen = app.proposals(state_root=state).store.load(first.proposal_id).proposal.base_commit
+
+    (root / "memory/MEMORY.md").write_text("# Memory\n\n- replaced on main\n", encoding="utf-8")
+    git(root, "add", "memory/MEMORY.md")
+    git(root, "commit", "-m", "replace memory on main")
+    second = app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert second.reused is True
+    assert second.proposal_id == first.proposal_id
+    assert count_proposals(state) == 1
+    assert (
+        app.proposals(state_root=state).store.load(second.proposal_id).proposal.base_commit
+        == frozen
+    )
+
+    git(root, "rm", "memory/MEMORY.md")
+    git(root, "commit", "-m", "delete memory on main")
+    third = app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert third.reused is True
+    assert third.proposal_id == first.proposal_id
+    assert count_proposals(state) == 1
+
+
+def test_completed_reuse_after_target_branch_deleted(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="reuse:branch-gone", target_branch="main")
+    first = app.intake(state_root=state).submit(load_proposal_request(raw))
+    frozen = app.proposals(state_root=state).store.load(first.proposal_id).proposal.base_commit
+    # Keep proposal commit reachable via its proposal branch; remove main tip name.
+    git(root, "branch", "keep-main", "main")
+    git(root, "checkout", "-b", "elsewhere")
+    git(root, "branch", "-D", "main")
+    second = app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert second.reused is True
+    assert second.proposal_id == first.proposal_id
+    assert (
+        app.proposals(state_root=state).store.load(second.proposal_id).proposal.base_commit
+        == frozen
+    )
+    assert count_proposals(state) == 1
+
+
+def test_pending_draft_resumes_with_frozen_base_after_file_change(tmp_path: Path) -> None:
+    from self_nomad.intake.service import InjectedCrash
+
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="draft:file-change")
+    with pytest.raises(InjectedCrash):
+        IntakeService(app.repository, state_root=state, fault_after="proposal_record").submit(
+            load_proposal_request(raw)
+        )
+    receipt = app.intake(state_root=state).store.load_receipt("draft:file-change")
+    assert receipt is not None
+    frozen = receipt.base_commit
+    (root / "memory/MEMORY.md").write_text("# Memory\n\n- changed after draft\n", encoding="utf-8")
+    git(root, "add", "memory/MEMORY.md")
+    git(root, "commit", "-m", "change memory after draft")
+    result = app.intake(state_root=state).submit(load_proposal_request(raw))
+    record = app.proposals(state_root=state).store.load(result.proposal_id)
+    assert record.proposal.base_commit == frozen
+    # Proposal worktree content comes from frozen base + operation, not the moved tip.
+    assert "Prefers concise" in (Path(record.worktree or "") / "memory/MEMORY.md").read_text()
+    service = app.proposals(state_root=state)
+    service.validate(result.proposal_id)
+    service.approve(result.proposal_id, identifier="owner")
+    git(root, "switch", "-c", "review-work")
+    with pytest.raises(ProposalStaleError):
+        service.apply(result.proposal_id)
+
+
+def test_pending_no_draft_target_moved_then_restored(tmp_path: Path) -> None:
+    from self_nomad.intake.service import InjectedCrash
+
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="pending:restore")
+    with pytest.raises(InjectedCrash):
+        IntakeService(app.repository, state_root=state, fault_after="pending_receipt").submit(
+            load_proposal_request(raw)
+        )
+    receipt = app.intake(state_root=state).store.load_receipt("pending:restore")
+    assert receipt is not None
+    reserved = receipt.proposal_id
+    frozen = receipt.base_commit
+    (root / "memory/MEMORY.md").write_text("# Memory\n\n- interim\n", encoding="utf-8")
+    git(root, "add", "memory/MEMORY.md")
+    git(root, "commit", "-m", "interim tip")
+    with pytest.raises(IntakeTargetMovedError):
+        app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert count_proposals(state) == 0
+
+    # Separate case shape: delete branch name while commit remains via backup ref.
+    git(root, "branch", "backup-main", "main")
+    git(root, "checkout", "-b", "side")
+    git(root, "branch", "-D", "main")
+    with pytest.raises(IntakeTargetMovedError):
+        app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert count_proposals(state) == 0
+
+    # Restore original tip and complete with reserved id.
+    git(root, "branch", "main", frozen)
+    git(root, "checkout", "main")
+    result = app.intake(state_root=state).submit(load_proposal_request(raw))
+    assert result.proposal_id == reserved
+    assert result.status is ProposalStatus.MATERIALIZED
+    assert count_proposals(state) == 1
+
+
+def test_corrupt_completed_binding_fails_closed(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    state = tmp_path / "state"
+    raw = request_bytes(request_id="corrupt:bind")
+    result = app.intake(state_root=state).submit(load_proposal_request(raw))
+    service = app.intake(state_root=state)
+    record = service.proposal_store.load(result.proposal_id)
+    # Tamper proposal intake digest so it disagrees with the receipt.
+    assert record.intake is not None
+    record.intake.request_digest = "f" * 64
+    service.proposal_store.save(record)
+    with pytest.raises(IntakeSubmissionFailedError):
+        service.preview(load_proposal_request(raw))
+    with pytest.raises(IntakeSubmissionFailedError):
+        service.submit(load_proposal_request(raw))

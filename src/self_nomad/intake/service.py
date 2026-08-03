@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
@@ -18,6 +19,7 @@ from self_nomad.domain import (
     Proposer,
 )
 from self_nomad.errors import (
+    GitOperationError,
     IntakeContentTooLargeError,
     IntakeContentUnsafeError,
     IntakeIdConflictError,
@@ -89,6 +91,29 @@ class InjectedCrash(RuntimeError):
     """Test-only process-crash simulation; leaves receipt unrecovered."""
 
 
+ReceiptState = Literal[
+    "none",
+    "conflict",
+    "pending_no_record",
+    "pending_draft",
+    "pending_materialized",
+    "completed",
+    "failed",
+]
+
+
+@dataclass
+class PreviewContext:
+    """Resolved intake context used for both preview findings and submission."""
+
+    request_digest: str
+    receipt: IntakeReceipt | None
+    target_branch: str
+    base_commit: str
+    proposal_record: ProposalRecord | None
+    receipt_state: ReceiptState
+
+
 class IntakeService:
     def __init__(
         self,
@@ -105,7 +130,6 @@ class IntakeService:
             repository, state_root=state_root, git=self.git, store=self.proposal_store
         )
         self.store = IntakeStore(self.proposal_store)
-        # Test-only injection points for crash-window coverage.
         self._fault_after = fault_after
 
     def _checkpoint(self, name: str) -> None:
@@ -128,6 +152,126 @@ class IntakeService:
                 f"request exceeds maximum_request_bytes ({policy.limits.maximum_request_bytes})",
                 code="INTAKE_REQUEST_TOO_LARGE",
             )
+
+    def _verify_receipt_record(
+        self,
+        receipt: IntakeReceipt,
+        record: ProposalRecord,
+        *,
+        request_digest: str,
+    ) -> None:
+        """Fail closed when durable receipt and proposal provenance disagree."""
+        if record.proposal.id != receipt.proposal_id:
+            raise IntakeSubmissionFailedError(
+                "proposal record id does not match intake receipt",
+                code="INTAKE_SUBMISSION_FAILED",
+            )
+        if (
+            record.proposal.base_commit != receipt.base_commit
+            or record.proposal.target_branch != receipt.target_branch
+        ):
+            raise IntakeSubmissionFailedError(
+                "proposal record base/target does not match intake receipt",
+                code="INTAKE_SUBMISSION_FAILED",
+            )
+        intake = record.intake
+        if intake is None:
+            raise IntakeSubmissionFailedError(
+                "proposal record is missing intake provenance required by receipt",
+                code="INTAKE_SUBMISSION_FAILED",
+            )
+        if (
+            intake.request_id != receipt.request_id
+            or intake.request_digest != receipt.request_digest
+            or intake.request_digest != request_digest
+        ):
+            raise IntakeSubmissionFailedError(
+                "proposal intake provenance does not match request receipt",
+                code="INTAKE_SUBMISSION_FAILED",
+            )
+
+    def _resolve_context(self, request: ProposalRequest) -> PreviewContext:
+        digest = request.canonical_digest()
+        receipt = self.store.load_receipt(request.request_id)
+        if receipt is None:
+            branch = self._resolve_branch(request)
+            base = self.git.head(f"refs/heads/{branch}")
+            return PreviewContext(
+                request_digest=digest,
+                receipt=None,
+                target_branch=branch,
+                base_commit=base,
+                proposal_record=None,
+                receipt_state="none",
+            )
+
+        if receipt.request_digest != digest:
+            return PreviewContext(
+                request_digest=digest,
+                receipt=receipt,
+                target_branch=receipt.target_branch,
+                base_commit=receipt.base_commit,
+                proposal_record=None,
+                receipt_state="conflict",
+            )
+
+        record: ProposalRecord | None
+        try:
+            record = self.proposal_store.load(receipt.proposal_id)
+        except ProposalNotFoundError:
+            record = None
+
+        if receipt.status == "failed":
+            return PreviewContext(
+                request_digest=digest,
+                receipt=receipt,
+                target_branch=receipt.target_branch,
+                base_commit=receipt.base_commit,
+                proposal_record=record,
+                receipt_state="failed",
+            )
+
+        if receipt.status == "completed":
+            if record is None:
+                raise IntakeSubmissionFailedError(
+                    "completed intake receipt is missing its proposal record",
+                    code="INTAKE_SUBMISSION_FAILED",
+                )
+            self._verify_receipt_record(receipt, record, request_digest=digest)
+            return PreviewContext(
+                request_digest=digest,
+                receipt=receipt,
+                target_branch=receipt.target_branch,
+                base_commit=receipt.base_commit,
+                proposal_record=record,
+                receipt_state="completed",
+            )
+
+        # pending
+        if record is None:
+            return PreviewContext(
+                request_digest=digest,
+                receipt=receipt,
+                target_branch=receipt.target_branch,
+                base_commit=receipt.base_commit,
+                proposal_record=None,
+                receipt_state="pending_no_record",
+            )
+        self._verify_receipt_record(receipt, record, request_digest=digest)
+        if record.status is ProposalStatus.DRAFT:
+            state: ReceiptState = "pending_draft"
+        elif record.status is ProposalStatus.FAILED:
+            state = "failed"
+        else:
+            state = "pending_materialized"
+        return PreviewContext(
+            request_digest=digest,
+            receipt=receipt,
+            target_branch=receipt.target_branch,
+            base_commit=receipt.base_commit,
+            proposal_record=record,
+            receipt_state=state,
+        )
 
     def _operation_summaries(
         self, request: ProposalRequest, *, policy: Policy
@@ -282,6 +426,31 @@ class IntakeService:
                     )
         return findings
 
+    def _live_target_moved_finding(self, receipt: IntakeReceipt) -> Finding | None:
+        try:
+            current = self.git.head(f"refs/heads/{receipt.target_branch}")
+        except GitOperationError:
+            return Finding(
+                severity="blocker",
+                code="INTAKE_TARGET_MOVED",
+                message=(
+                    f"target branch {receipt.target_branch!r} is missing or unreadable; "
+                    f"frozen base {receipt.base_commit} remains reserved"
+                ),
+                path=None,
+            )
+        if current != receipt.base_commit:
+            return Finding(
+                severity="blocker",
+                code="INTAKE_TARGET_MOVED",
+                message=(
+                    f"target branch {receipt.target_branch!r} moved from "
+                    f"{receipt.base_commit} to {current}; use a new request_id for the new tip"
+                ),
+                path=None,
+            )
+        return None
+
     def _suggested_next(self, status: ProposalStatus | None, *, eligible: bool) -> list[str]:
         if status is ProposalStatus.MATERIALIZED:
             return ["validate", "review", "approve", "apply"]
@@ -308,47 +477,76 @@ class IntakeService:
                 "request exceeds maximum_proposal_files",
                 code="INTAKE_POLICY_REJECTED",
             )
-        manifest = self.repository.load_manifest()
-        branch = self._resolve_branch(request)
-        base_commit = self.git.head(f"refs/heads/{branch}")
+        # Resolve receipt and selected base commit BEFORE target-tree preflight.
+        context = self._resolve_context(request)
         summaries = self._operation_summaries(request, policy=policy)
         findings = self._secret_findings(request, policy=policy)
-        findings.extend(self._target_tree_findings(request, base_commit=base_commit))
         risk = classify_proposal_risk(request.operations)
-        digest = request.canonical_digest()
         existing_id: UUID | None = None
         existing_status: ProposalStatus | None = None
-        receipt = self.store.load_receipt(request.request_id)
-        if receipt is not None:
-            if receipt.request_digest != digest:
-                findings.append(
-                    Finding(
-                        severity="blocker",
-                        code="INTAKE_ID_CONFLICT",
-                        message="request_id was reused with a different payload",
-                        path=None,
-                    )
+
+        if context.receipt_state == "conflict":
+            findings.append(
+                Finding(
+                    severity="blocker",
+                    code="INTAKE_ID_CONFLICT",
+                    message="request_id was reused with a different payload",
+                    path=None,
                 )
-            else:
-                existing_id = receipt.proposal_id
-                try:
-                    record = self.proposal_store.load(receipt.proposal_id)
-                    existing_status = record.status
-                except SelfNomadError:
-                    existing_status = None
-                # Prefer receipt-bound tip for display when resuming.
-                if receipt.target_branch:
-                    branch = receipt.target_branch
-                if receipt.base_commit:
-                    base_commit = receipt.base_commit
+            )
+            if context.receipt is not None:
+                existing_id = context.receipt.proposal_id
+        elif context.receipt_state == "failed":
+            existing_id = context.receipt.proposal_id if context.receipt else None
+            existing_status = (
+                context.proposal_record.status
+                if context.proposal_record is not None
+                else ProposalStatus.FAILED
+            )
+            findings.append(
+                Finding(
+                    severity="blocker",
+                    code="INTAKE_SUBMISSION_FAILED",
+                    message="prior intake submission for this request_id failed",
+                    path=None,
+                )
+            )
+        elif context.receipt_state in {"completed", "pending_materialized"}:
+            # Reuse path: frozen base only for presentation; do not re-score
+            # current tip file state against the original request.
+            assert context.proposal_record is not None
+            existing_id = context.proposal_record.proposal.id
+            existing_status = context.proposal_record.status
+        elif context.receipt_state == "pending_draft":
+            assert context.proposal_record is not None
+            existing_id = context.proposal_record.proposal.id
+            existing_status = context.proposal_record.status
+            findings.extend(
+                self._target_tree_findings(request, base_commit=context.base_commit)
+            )
+        elif context.receipt_state == "pending_no_record":
+            assert context.receipt is not None
+            existing_id = context.receipt.proposal_id
+            findings.extend(
+                self._target_tree_findings(request, base_commit=context.base_commit)
+            )
+            moved = self._live_target_moved_finding(context.receipt)
+            if moved is not None:
+                findings.append(moved)
+        else:
+            # First submission: preflight against the live tip that will be frozen.
+            findings.extend(
+                self._target_tree_findings(request, base_commit=context.base_commit)
+            )
+
         invalid = {"error", "blocker"}
         eligible = not any(item.severity in invalid for item in findings)
         return IntakePreviewResult(
             request_id=request.request_id,
-            request_digest=digest,
-            repository_id=manifest.self.id,
-            base_commit=base_commit,
-            target_branch=branch,
+            request_digest=context.request_digest,
+            repository_id=self.repository.load_manifest().self.id,
+            base_commit=context.base_commit,
+            target_branch=context.target_branch,
             risk=risk,
             operations=summaries,
             findings=findings,
@@ -365,6 +563,24 @@ class IntakeService:
                 "request_id was reused with a different payload",
                 code="INTAKE_ID_CONFLICT",
             )
+        if any(item.code == "INTAKE_TARGET_MOVED" for item in preview.findings):
+            raise IntakeTargetMovedError(
+                next(
+                    item.message
+                    for item in preview.findings
+                    if item.code == "INTAKE_TARGET_MOVED"
+                ),
+                code="INTAKE_TARGET_MOVED",
+            )
+        if any(item.code == "INTAKE_SUBMISSION_FAILED" for item in preview.findings):
+            raise IntakeSubmissionFailedError(
+                next(
+                    item.message
+                    for item in preview.findings
+                    if item.code == "INTAKE_SUBMISSION_FAILED"
+                ),
+                code="INTAKE_SUBMISSION_FAILED",
+            )
         if not preview.eligible:
             blockers = [
                 f"{item.code}: {item.message}"
@@ -376,13 +592,19 @@ class IntakeService:
                 code="INTAKE_POLICY_REJECTED",
             )
         digest = preview.request_digest
-        # Ensure lock parent exists only when submitting (durable path).
         self.store.ensure_writable()
         with FileLock(self.store.lock_path, timeout=30):
             return self._submit_locked(request, preview, digest)
 
     def _assert_target_at_receipt(self, receipt: IntakeReceipt) -> None:
-        current = self.git.head(f"refs/heads/{receipt.target_branch}")
+        try:
+            current = self.git.head(f"refs/heads/{receipt.target_branch}")
+        except GitOperationError as exc:
+            raise IntakeTargetMovedError(
+                f"target branch {receipt.target_branch!r} is missing or unreadable; "
+                f"frozen base {receipt.base_commit} remains reserved",
+                code="INTAKE_TARGET_MOVED",
+            ) from exc
         if current != receipt.base_commit:
             raise IntakeTargetMovedError(
                 f"target branch {receipt.target_branch!r} moved from "
@@ -427,6 +649,9 @@ class IntakeService:
         proposal_id = receipt.proposal_id
         if receipt.status == "completed":
             record = self.proposal_store.load(proposal_id)
+            self._verify_receipt_record(
+                receipt, record, request_digest=preview.request_digest
+            )
             self.store.clear_staging(receipt.request_digest)
             return self._submit_result(preview, record, reused=True)
 
@@ -437,21 +662,12 @@ class IntakeService:
                 code="INTAKE_SUBMISSION_FAILED",
             )
 
-        # pending
         try:
             record = self.proposal_store.load(proposal_id)
         except ProposalNotFoundError:
-            # Crash after receipt, before draft: create reserved proposal.
             return self._execute_submission(request, preview, receipt)
 
-        if (
-            record.proposal.base_commit != receipt.base_commit
-            or record.proposal.target_branch != receipt.target_branch
-        ):
-            raise IntakeSubmissionFailedError(
-                "proposal record base/target does not match intake receipt",
-                code="INTAKE_SUBMISSION_FAILED",
-            )
+        self._verify_receipt_record(receipt, record, request_digest=preview.request_digest)
 
         if record.status is ProposalStatus.DRAFT:
             return self._materialize_and_complete(
@@ -462,7 +678,6 @@ class IntakeService:
                 f"proposal {proposal_id} is failed; request_id is reserved",
                 code="INTAKE_SUBMISSION_FAILED",
             )
-        # Materialized or later: complete receipt and reuse.
         receipt.status = "completed"
         receipt.error = None
         self.store.save_receipt(receipt)
@@ -476,8 +691,6 @@ class IntakeService:
         receipt: IntakeReceipt,
     ) -> IntakeSubmitResult:
         try:
-            # Do not create a draft against a moved tip; leave receipt pending
-            # so recovery can proceed if the original ref becomes valid again.
             self._assert_target_at_receipt(receipt)
             operations = self._stage_operations(request, digest=receipt.request_digest)
             self._checkpoint("staging")
@@ -503,12 +716,10 @@ class IntakeService:
                 request, preview, receipt, record, reused=False
             )
         except InjectedCrash:
-            # Simulate hard process exit: durable pending state remains as-is.
             raise
         except IntakeIdConflictError:
             raise
         except IntakeTargetMovedError:
-            # Keep pending receipt recoverable; do not mark failed.
             raise
         except Exception as exc:
             receipt.status = "failed"
