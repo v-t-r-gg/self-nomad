@@ -3,12 +3,18 @@ import shutil
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 from uuid import UUID
 
 from filelock import FileLock
 
-from self_nomad.domain import FileOperation, Proposal, ProposalRecord, ProposalStatus, Proposer
+from self_nomad.domain import (
+    FileOperation,
+    IntakeProvenance,
+    Proposal,
+    ProposalRecord,
+    ProposalStatus,
+    Proposer,
+)
 from self_nomad.errors import (
     ConflictError,
     ProposalStaleError,
@@ -19,6 +25,7 @@ from self_nomad.filesystem import atomic_write_bytes, atomic_write_text, contain
 from self_nomad.git import GitBackend
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
+from self_nomad.proposals.risk import classify_proposal_risk
 from self_nomad.repository import SelfRepository
 
 from .store import ProposalStore
@@ -31,10 +38,11 @@ class ProposalService:
         *,
         state_root: Path | None = None,
         git: GitBackend | None = None,
+        store: ProposalStore | None = None,
     ) -> None:
         self.repository = repository
         self.git = git or GitBackend(repository.root)
-        self.store = ProposalStore(repository.root, state_root)
+        self.store = store or ProposalStore(repository.root, state_root)
 
     def create(
         self,
@@ -43,6 +51,8 @@ class ProposalService:
         operations: list[FileOperation],
         target_branch: str | None = None,
         proposer: Proposer | None = None,
+        source_adapter: str | None = None,
+        intake: IntakeProvenance | None = None,
     ) -> ProposalRecord:
         manifest = self.repository.load_manifest()
         policy = Policy.model_validate(
@@ -50,7 +60,7 @@ class ProposalService:
         )
         if len(operations) > policy.limits.maximum_proposal_files:
             raise ConflictError("proposal exceeds maximum_proposal_files")
-        risk = self._classify_risk(operations)
+        risk = classify_proposal_risk(operations)
         for operation in operations:
             if operation.content_source:
                 source = Path(operation.content_source)
@@ -66,12 +76,13 @@ class ProposalService:
             repository_id=manifest.self.id,
             base_commit=self.git.head(f"refs/heads/{branch}"),
             target_branch=branch,
+            source_adapter=source_adapter,
             proposer=proposer or Proposer(),
             reason=reason,
             operations=operations,
             risk=risk,
         )
-        record = ProposalRecord(proposal=proposal)
+        record = ProposalRecord(proposal=proposal, intake=intake)
         self.store.save(record)
         return self.materialize(proposal.id)
 
@@ -81,27 +92,6 @@ class ProposalService:
             content.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ConflictError(f"content source is not valid UTF-8: {path}") from exc
-
-    @staticmethod
-    def _classify_risk(
-        operations: list[FileOperation],
-    ) -> Literal["low", "medium", "high", "critical"]:
-        paths = [operation.path for operation in operations]
-        if any(
-            path.startswith("policy/")
-            or path == "self-nomad.yaml"
-            or Path(path).suffix in {".py", ".sh", ".js", ".exe"}
-            for path in paths
-        ):
-            return "critical"
-        if any(
-            operation.kind == "delete" or operation.path.startswith("identity/")
-            for operation in operations
-        ):
-            return "high"
-        if any(path.startswith("skills/") for path in paths):
-            return "medium"
-        return "low"
 
     def materialize(self, proposal_id: UUID) -> ProposalRecord:
         with FileLock(self.store.lock_path, timeout=10):
