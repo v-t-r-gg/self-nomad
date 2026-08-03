@@ -13,12 +13,14 @@ and change-governance layer around the agents you already run.
 
 ## Development status
 
-**Release candidate `0.1.0rc1`.** The deterministic core supports repository
+**Development follows `v0.1.0rc1`.** The deterministic core supports repository
 initialization and validation, isolated Git proposals with typed file
 operations, review, validation, approval, stale detection, atomic target-ref
-application, and committed audit records. Hermes and OpenClaw adapters provide
-deterministic detection, import/restore plans, explicit fidelity and exclusion
-reporting, verified backups, and atomic file writes.
+application, and committed audit records. Agent intake accepts structured JSON
+proposal requests (preview/submit) into that lifecycle without automatic
+approval. Hermes and OpenClaw adapters provide deterministic detection,
+import/restore plans, explicit fidelity and exclusion reporting, verified
+backups, and atomic file writes.
 
 Supported Python versions: **3.11, 3.12, and 3.13**. The package is intended to
 be **OS-independent**; CI exercises Ubuntu (3.11–3.13) plus macOS and Windows
@@ -31,7 +33,7 @@ be **OS-independent**; CI exercises Ubuntu (3.11–3.13) plus macOS and Windows
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install dist/self_nomad-0.1.0rc1-py3-none-any.whl
+pip install dist/self_nomad-*-py3-none-any.whl
 self-nomad --version
 ```
 
@@ -129,12 +131,32 @@ See [docs/threat-model.md](docs/threat-model.md) and
 | Credentials / sessions / DBs | Stay outside migration; never imported or restored as portable self |
 | Secret scanning | High-confidence patterns only; not full DLP |
 
+## Agent intake
+
+Agents propose portable changes as strict JSON without filesystem path
+injection. Preview is free; `--submit` materializes a proposal. Approval and
+apply remain separate commands.
+
+```bash
+self-nomad --repo ./my-agent --json intake --request request.json
+self-nomad --repo ./my-agent --json intake --request request.json --submit
+self-nomad --repo ./my-agent review PROPOSAL_ID
+self-nomad --repo ./my-agent validate PROPOSAL_ID
+self-nomad --repo ./my-agent approve PROPOSAL_ID --identifier owner
+git switch -c review-work
+self-nomad --repo ./my-agent apply PROPOSAL_ID
+```
+
+See [docs/agent-intake.md](docs/agent-intake.md), the JSON Schema under
+`docs/schema/`, and examples in `examples/intake/`.
+
 ## Documentation
 
 - [Repository format](docs/repository-format.md)
 - [Architecture](docs/architecture.md)
 - [Threat model](docs/threat-model.md)
 - [Adapter authoring](docs/adapter-authoring.md)
+- [Agent intake](docs/agent-intake.md)
 - [Releasing](docs/releasing.md) (maintainers)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)

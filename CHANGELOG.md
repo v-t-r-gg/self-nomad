@@ -9,11 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Agent-facing proposal intake: strict `ProposalRequest` v1, preview/submit
+  service, CLI `intake`, JSON Schema, and idempotent request receipts.
+- Examples and documentation for Hermes/OpenClaw-style memory and skill updates.
+- Policy limit `limits.maximum_request_bytes` (default 4 MiB).
+
 ### Changed
 
 ### Fixed
 
 ### Security
+
+- Intake rejects invalid UTF-8, control characters, path escape, secrets in
+  content/provenance, and caller-supplied content paths.
 
 ## [0.1.0rc1] - 2026-08-03
 

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "request_id": "openclaw:memory-update:2026-08-03T170100Z",
+  "reason": "Record the user's preference for concise status reports.",
+  "target_branch": "main",
+  "source": {
+    "runtime": "openclaw",
+    "agent_identifier": "primary",
+    "correlation_id": "task-8421"
+  },
+  "operations": [
+    {
+      "kind": "replace",
+      "path": "memory/MEMORY.md",
+      "content": "# Memory\n\n- Prefers concise status reports.\n"
+    }
+  ]
+}
