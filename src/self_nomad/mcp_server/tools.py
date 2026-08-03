@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from self_nomad import __version__
@@ -19,6 +20,8 @@ from self_nomad.mcp_server.models import (
     ValidateInput,
 )
 from self_nomad.mcp_server.sanitize import decode_cursor, encode_cursor, sanitize_proposal
+
+logger = logging.getLogger("self_nomad.mcp")
 
 EXPECTED_TOOL_NAMES: tuple[str, ...] = (
     "self_nomad_repository_status",
@@ -60,9 +63,20 @@ def envelope(
     return payload.model_dump(mode="json")
 
 
-def fail(tool: str, exc: BaseException) -> dict[str, Any]:
-    code, message = map_exception(exc)
-    return envelope(tool, ok=False, errors=[ErrorItem(code=code, message=message, path=None)])
+def fail(
+    tool: str,
+    exc: BaseException,
+    *,
+    errors: list[ErrorItem] | None = None,
+) -> dict[str, Any]:
+    if errors is not None:
+        return envelope(tool, ok=False, errors=errors)
+    code, message, path = map_exception(exc)
+    return envelope(tool, ok=False, errors=[ErrorItem(code=code, message=message, path=path)])
+
+
+def fail_argument_errors(tool: str, errors: list[ErrorItem]) -> dict[str, Any]:
+    return envelope(tool, ok=False, errors=errors)
 
 
 class ToolContext:
@@ -76,7 +90,6 @@ class ToolContext:
         repo = self.app.repository
         manifest = repo.load_manifest()
         validation = repo.validate(strict=False)
-        # Proposal listing must not create state dirs if none exist.
         counts: dict[str, int] = {status.value: 0 for status in ProposalStatus}
         try:
             records = self.app.proposals().store.list()
@@ -95,8 +108,7 @@ class ToolContext:
         except SelfNomadError:
             pass
         # Root is the resolved absolute path of the fixed server repository.
-        # Documented sanitization: never rewrite via process CWD; never accept
-        # a client-supplied path. Staging/worktree paths are never returned.
+        # Staging/worktree paths are never returned.
         return {
             "package_version": __version__,
             "repository": {
@@ -142,7 +154,11 @@ class ToolContext:
             try:
                 after = decode_cursor(data.cursor)
             except ValueError as exc:
-                raise McpServerError(str(exc), code="MCP_INVALID_ARGUMENT") from exc
+                from self_nomad.mcp_server.errors import McpInvalidArgumentError
+
+                raise McpInvalidArgumentError(
+                    "invalid pagination cursor", path="cursor"
+                ) from exc
             for index, record in enumerate(records):
                 if record.proposal.id.hex > after:
                     start = index
@@ -167,11 +183,9 @@ class ToolContext:
         service = self.app.proposals()
         record = service.store.load(data.proposal_id)
         if record.status is ProposalStatus.VALIDATED:
-            # Idempotent re-validation path for unchanged validated proposals.
             try:
                 service.validate(data.proposal_id)
             except SelfNomadError:
-                # Fall through: validate() may re-check and raise if stale.
                 raise
             record = service.store.load(data.proposal_id)
             payload = sanitize_proposal(record)
@@ -184,16 +198,13 @@ class ToolContext:
 
 
 def call_tool(ctx: ToolContext, tool: str, handler: Any, *args: Any) -> dict[str, Any]:
-    import logging
-
     try:
         result = handler(*args)
         return envelope(tool, ok=True, result=result)
     except Exception as exc:  # noqa: BLE001 - boundary mapping
         if isinstance(exc, McpServerError | SelfNomadError):
             return fail(tool, exc)
-        # Unexpected: generic message only; diagnostic goes to stderr via logging.
-        logging.getLogger("self_nomad.mcp").error(
+        logger.error(
             "tool %s internal error: %s: %s",
             tool,
             type(exc).__name__,

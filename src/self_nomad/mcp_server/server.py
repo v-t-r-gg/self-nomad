@@ -21,6 +21,7 @@ from self_nomad.mcp_server.errors import (
     McpInvalidArgumentError,
     McpRepositoryUnavailableError,
 )
+from self_nomad.mcp_server.middleware import EnvelopeBoundaryMiddleware
 from self_nomad.mcp_server.models import ProposalIdInput, ProposalListInput, ValidateInput
 from self_nomad.mcp_server.tools import (
     EXPECTED_TOOL_NAMES,
@@ -37,7 +38,7 @@ def open_fixed_repository(repo: Path) -> SelfNomad:
         path = repo.expanduser().resolve(strict=True)
     except OSError as exc:
         raise McpRepositoryUnavailableError(
-            f"repository path is not available: {repo}"
+            "configured repository path is not available"
         ) from exc
     if not path.is_dir():
         raise McpRepositoryUnavailableError("repository path must be a directory")
@@ -54,7 +55,7 @@ def build_server(repo: Path) -> MCPServer:
     app = open_fixed_repository(repo)
     ctx = ToolContext(app)
 
-    package_version = __version__ if __version__ != "0+unknown" else "0.2.0.dev0"
+    # Single public version source (installed metadata or source-tree sentinel).
     server = MCPServer(
         name="self-nomad",
         title="self-nomad",
@@ -63,7 +64,7 @@ def build_server(repo: Path) -> MCPServer:
             "repository and submitting isolated proposals. Submission never "
             "approves or applies changes to the target branch."
         ),
-        version=package_version,
+        version=__version__,
         instructions=(
             "Use self_nomad_intake_preview then self_nomad_intake_submit to create "
             "isolated proposals. Approval and apply are operator CLI operations "
@@ -71,6 +72,20 @@ def build_server(repo: Path) -> MCPServer:
             "server lifetime; tool inputs never accept a repository path."
         ),
     )
+
+    # Self-owned registration accounting (no private SDK managers).
+    registered: list[str] = []
+
+    def _register(name: str) -> None:
+        if name not in EXPECTED_TOOL_NAMES:
+            raise McpConfigurationError(
+                f"refusing to register tool outside the allow-list: {name}"
+            )
+        if name in registered:
+            raise McpConfigurationError(f"duplicate tool registration: {name}")
+        registered.append(name)
+
+    _register("self_nomad_repository_status")
 
     @server.tool(
         name="self_nomad_repository_status",
@@ -89,6 +104,8 @@ def build_server(repo: Path) -> MCPServer:
     )
     def repository_status() -> dict[str, Any]:
         return call_tool(ctx, "self_nomad_repository_status", ctx.status)
+
+    _register("self_nomad_repository_validate")
 
     @server.tool(
         name="self_nomad_repository_validate",
@@ -112,6 +129,8 @@ def build_server(repo: Path) -> MCPServer:
             ValidateInput(strict=strict),
         )
 
+    _register("self_nomad_intake_preview")
+
     @server.tool(
         name="self_nomad_intake_preview",
         description=(
@@ -128,6 +147,8 @@ def build_server(repo: Path) -> MCPServer:
     )
     def intake_preview(request: ProposalRequest) -> dict[str, Any]:
         return call_tool(ctx, "self_nomad_intake_preview", ctx.intake_preview, request)
+
+    _register("self_nomad_intake_submit")
 
     @server.tool(
         name="self_nomad_intake_submit",
@@ -147,6 +168,8 @@ def build_server(repo: Path) -> MCPServer:
     )
     def intake_submit(request: ProposalRequest) -> dict[str, Any]:
         return call_tool(ctx, "self_nomad_intake_submit", ctx.intake_submit, request)
+
+    _register("self_nomad_proposal_list")
 
     @server.tool(
         name="self_nomad_proposal_list",
@@ -175,16 +198,18 @@ def build_server(repo: Path) -> MCPServer:
             except ValueError:
                 return fail(
                     "self_nomad_proposal_list",
-                    McpInvalidArgumentError(f"unknown proposal status: {status}"),
+                    McpInvalidArgumentError("unknown proposal status", path="status"),
                 )
         try:
             payload = ProposalListInput(status=status_enum, limit=limit, cursor=cursor)
-        except Exception as exc:  # noqa: BLE001 - pydantic validation boundary
+        except Exception:  # noqa: BLE001 - pydantic validation boundary
             return fail(
                 "self_nomad_proposal_list",
-                McpInvalidArgumentError(str(exc)),
+                McpInvalidArgumentError("invalid tool arguments"),
             )
         return call_tool(ctx, "self_nomad_proposal_list", ctx.proposal_list, payload)
+
+    _register("self_nomad_proposal_get")
 
     @server.tool(
         name="self_nomad_proposal_get",
@@ -207,6 +232,8 @@ def build_server(repo: Path) -> MCPServer:
             ctx.proposal_get,
             ProposalIdInput(proposal_id=proposal_id),
         )
+
+    _register("self_nomad_proposal_validate")
 
     @server.tool(
         name="self_nomad_proposal_validate",
@@ -244,11 +271,11 @@ def build_server(repo: Path) -> MCPServer:
             .read_text(encoding="utf-8")
         )
 
-    # Sanity: registered tools must match the closed allow-list.
-    registered = sorted(tool.name for tool in server._tool_manager.list_tools())  # noqa: SLF001
-    expected = sorted(EXPECTED_TOOL_NAMES)
-    if registered != expected:
-        logger.error("tool registry mismatch: %s != %s", registered, expected)
+    if sorted(registered) != sorted(EXPECTED_TOOL_NAMES):
+        logger.error("tool registry mismatch: %s != %s", registered, list(EXPECTED_TOOL_NAMES))
         raise McpConfigurationError("MCP tool registry does not match the expected allow-list")
+
+    # Enforce envelope contract for recognized-tool argument failures.
+    server.middleware.append(EnvelopeBoundaryMiddleware())
 
     return server

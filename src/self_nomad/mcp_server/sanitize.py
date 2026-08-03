@@ -10,13 +10,57 @@ from uuid import UUID
 from self_nomad.domain import ProposalRecord, ProposalStatus
 
 
-def suggested_next_for_status(status: ProposalStatus) -> list[str]:
+def suggested_next_for_status(status: ProposalStatus) -> list[dict[str, str]]:
+    """Capability-aware next steps at the MCP boundary.
+
+    MCP-callable actions use exact tool names. Operator-only lifecycle steps
+    are labeled as CLI operations and are never implied to exist on this server.
+    """
     if status is ProposalStatus.MATERIALIZED:
-        return ["validate", "review", "approve", "apply"]
+        return [
+            {
+                "channel": "mcp",
+                "tool": "self_nomad_proposal_validate",
+                "description": "Strictly validate this proposal via MCP",
+            },
+            {
+                "channel": "cli",
+                "command": "self-nomad review",
+                "description": "Operator review of the isolated proposal (CLI)",
+            },
+            {
+                "channel": "cli_operator",
+                "command": "self-nomad approve",
+                "description": "Operator approval — not available via MCP",
+            },
+            {
+                "channel": "cli_operator",
+                "command": "self-nomad apply",
+                "description": "Operator apply — not available via MCP",
+            },
+        ]
     if status is ProposalStatus.VALIDATED:
-        return ["approve", "apply"]
+        return [
+            {
+                "channel": "cli_operator",
+                "command": "self-nomad approve",
+                "description": "Operator approval — not available via MCP",
+            },
+            {
+                "channel": "cli_operator",
+                "command": "self-nomad apply",
+                "description": "Operator apply — not available via MCP",
+            },
+        ]
     if status is ProposalStatus.APPROVED:
-        return ["apply"]
+        return [
+            {
+                "channel": "cli_operator",
+                "command": "self-nomad apply",
+                "description": "Operator apply — not available via MCP",
+            },
+        ]
+    # Terminal or non-actionable states (applied, rejected, stale, failed, draft).
     return []
 
 
