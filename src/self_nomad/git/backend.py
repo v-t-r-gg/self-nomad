@@ -37,6 +37,8 @@ class GitBackend:
             f"core.hooksPath={hooks_path}",
             "-c",
             "core.longpaths=true",
+            "-c",
+            "core.autocrlf=false",
         ]
         try:
             completed = subprocess.run(

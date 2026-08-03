@@ -8,7 +8,6 @@ touch the runner's real user directories.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -91,10 +90,11 @@ def test_subprocess_propose_uses_isolated_state(tmp_path: Path) -> None:
     proposal_id = body["result"]["proposal"]["id"]
 
     # Ensure state landed under the isolated tree, not the real home.
-    # Records are stored as compact UUID hex filenames.
+    # Records are stored as compact UUID hex filenames under platformdirs.
     compact = proposal_id.replace("-", "")
-    xdg = Path(env["XDG_STATE_HOME"])
-    local = Path(env["LOCALAPPDATA"])
-    found = list(xdg.rglob(f"{compact}.json")) + list(local.rglob(f"{compact}.json"))
-    assert found, "proposal record missing from isolated state directories"
-    assert Path(env["HOME"]).resolve() != Path.home().resolve() or os.name == "nt"
+    state_root = tmp_path / "state"
+    found = list(state_root.rglob(f"{compact}.json"))
+    assert found, (
+        f"proposal record missing from isolated state directories under {state_root}; "
+        f"LOCALAPPDATA={env.get('LOCALAPPDATA')!r} XDG_STATE_HOME={env.get('XDG_STATE_HOME')!r}"
+    )

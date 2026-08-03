@@ -15,7 +15,7 @@ from self_nomad.errors import (
     ProposalStateError,
     ValidationFailedError,
 )
-from self_nomad.filesystem import atomic_write_text, contained_path, sha256_file
+from self_nomad.filesystem import atomic_write_bytes, atomic_write_text, contained_path, sha256_file
 from self_nomad.git import GitBackend
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
@@ -152,8 +152,10 @@ class ProposalService:
             if source_input.is_symlink() or not source_input.is_file():
                 raise ConflictError("content source must be a regular file")
             source = source_input.resolve(strict=True)
-            content = source.read_text(encoding="utf-8")
-            atomic_write_text(target, content)
+            # Byte-exact copy so expected_after_sha256 matches on Windows when
+            # sources use CRLF (text mode would normalize newlines and break hashes).
+            content = source.read_bytes()
+            atomic_write_bytes(target, content)
             if (
                 operation.expected_after_sha256
                 and sha256_file(target) != operation.expected_after_sha256
