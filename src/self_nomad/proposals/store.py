@@ -20,13 +20,21 @@ class ProposalStore:
         self.records = self.root / "p"
         self.worktrees = self.root / "w"
         self.lock_path = self.root / "lock"
+
+    def ensure_writable(self) -> None:
+        """Create on-disk directories only when durable writes are required."""
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.records.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.worktrees.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def path_for(self, proposal_id: UUID) -> Path:
         return self.records / f"{proposal_id.hex}.json"
 
+    def exists(self, proposal_id: UUID) -> bool:
+        return self.path_for(proposal_id).is_file()
+
     def save(self, record: ProposalRecord) -> None:
+        self.ensure_writable()
         content = json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
         atomic_write_text(self.path_for(record.proposal.id), content, mode=0o600)
 
@@ -38,6 +46,8 @@ class ProposalStore:
             raise ProposalNotFoundError(f"proposal not found: {proposal_id}") from exc
 
     def list(self) -> list[ProposalRecord]:
+        if not self.records.is_dir():
+            return []
         return [
             ProposalRecord.model_validate_json(path.read_text(encoding="utf-8"))
             for path in sorted(self.records.glob("*.json"))

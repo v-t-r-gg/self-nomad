@@ -216,3 +216,120 @@ def test_schema_packaged_for_importlib_resources() -> None:
     assert resource.is_file()
     data = json.loads(resource.read_text(encoding="utf-8"))
     assert data.get("title")
+
+
+def _schema() -> dict[str, object]:
+    return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))  # type: ignore[no-any-return]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # add without content
+        {
+            **_valid_payload(),
+            "operations": [{"kind": "add", "path": "memory/extra.md"}],
+        },
+        # replace without content
+        {
+            **_valid_payload(),
+            "operations": [{"kind": "replace", "path": "memory/MEMORY.md"}],
+        },
+        # delete with content
+        {
+            **_valid_payload(),
+            "operations": [
+                {"kind": "delete", "path": "memory/MEMORY.md", "content": "x"}
+            ],
+        },
+        # delete with after hash
+        {
+            **_valid_payload(),
+            "operations": [
+                {
+                    "kind": "delete",
+                    "path": "memory/MEMORY.md",
+                    "expected_after_sha256": "a" * 64,
+                }
+            ],
+        },
+        # uppercase digest
+        {
+            **_valid_payload(),
+            "operations": [
+                {
+                    "kind": "replace",
+                    "path": "memory/MEMORY.md",
+                    "content": "x",
+                    "expected_after_sha256": "A" * 64,
+                }
+            ],
+        },
+        # short digest
+        {
+            **_valid_payload(),
+            "operations": [
+                {
+                    "kind": "replace",
+                    "path": "memory/MEMORY.md",
+                    "content": "x",
+                    "expected_after_sha256": "abcd",
+                }
+            ],
+        },
+        # nonhex digest
+        {
+            **_valid_payload(),
+            "operations": [
+                {
+                    "kind": "replace",
+                    "path": "memory/MEMORY.md",
+                    "content": "x",
+                    "expected_after_sha256": "g" * 64,
+                }
+            ],
+        },
+        # unknown nested field
+        {
+            **_valid_payload(),
+            "operations": [
+                {
+                    "kind": "replace",
+                    "path": "memory/MEMORY.md",
+                    "content": "x",
+                    "extra": 1,
+                }
+            ],
+        },
+        # invalid request id (space)
+        {**_valid_payload(), "request_id": "bad id"},
+        # invalid portable path (absolute)
+        {
+            **_valid_payload(),
+            "operations": [
+                {"kind": "replace", "path": "/etc/passwd", "content": "x"}
+            ],
+        },
+        # invalid portable path (empty segment via trailing issues / special)
+        {
+            **_valid_payload(),
+            "operations": [
+                {"kind": "replace", "path": "memory\\win.md", "content": "x"}
+            ],
+        },
+    ],
+)
+def test_json_schema_rejects_invalid_contracts(payload: dict[str, object]) -> None:
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(payload, _schema())
+
+
+def test_pydantic_rejects_dotdot_path() -> None:
+    with pytest.raises(IntakeSchemaInvalidError):
+        load_proposal_request(
+            json.dumps(
+                _valid_payload(
+                    operations=[{"kind": "replace", "path": "../escape.md", "content": "x"}]
+                )
+            ).encode()
+        )

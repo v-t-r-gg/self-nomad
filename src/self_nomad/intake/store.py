@@ -22,7 +22,9 @@ class IntakeReceipt(BaseModel):
     request_id: str
     request_digest: str
     status: Literal["pending", "completed", "failed"]
-    proposal_id: UUID | None = None
+    # Always set when a pending receipt is first written so retries never
+    # allocate a second proposal UUID for the same request_id + digest.
+    proposal_id: UUID
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     error: str | None = None
@@ -36,6 +38,10 @@ class IntakeStore:
         self.receipts = self.root / "r"
         self.staging = self.root / "s"
         self.lock_path = self.root / "lock"
+
+    def ensure_writable(self) -> None:
+        """Create directories only when durable intake writes are required."""
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.receipts.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.staging.mkdir(parents=True, exist_ok=True, mode=0o700)
 
@@ -53,11 +59,13 @@ class IntakeStore:
         return IntakeReceipt.model_validate_json(path.read_text(encoding="utf-8"))
 
     def save_receipt(self, receipt: IntakeReceipt) -> None:
+        self.ensure_writable()
         receipt.updated_at = datetime.now(UTC)
         content = json.dumps(receipt.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"
         atomic_write_text(self.receipt_path(receipt.request_id), content, mode=0o600)
 
     def staging_dir(self, request_digest: str) -> Path:
+        self.ensure_writable()
         path = self.staging / request_digest
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         return path

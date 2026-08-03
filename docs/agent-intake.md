@@ -9,9 +9,14 @@ preview → submit → review → validate → approve → apply
 ```
 
 Submit creates and materializes a proposal. **Approval and application remain
-separate explicit human (or policy-gated) operations.** Tree binding, declared
-diff verification, stale detection, secret scanning, atomic ref update, and
-audit records are unchanged.
+separate explicit operations.** Self-nomad provides an approval step and records
+the supplied `approval_identifier`; it does **not** authenticate whether the
+caller is a human. Tree binding, declared diff verification, stale detection,
+secret scanning, atomic ref update, and audit records are unchanged.
+
+Preview inspects the **resolved target branch commit** (not merely the current
+worktree checkout). Idempotent submit preallocates one proposal UUID in a
+durable receipt before creation so retries never allocate a second proposal.
 
 ## Trust boundary
 

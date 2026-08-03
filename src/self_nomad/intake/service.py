@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,12 +22,19 @@ from self_nomad.errors import (
     IntakeContentUnsafeError,
     IntakeIdConflictError,
     IntakePolicyRejectedError,
+    IntakeRequestTooLargeError,
     IntakeSubmissionFailedError,
+    ProposalNotFoundError,
     SelfNomadError,
 )
 from self_nomad.filesystem import contained_path, sha256_file
 from self_nomad.git import GitBackend
-from self_nomad.intake.models import ProposalRequest
+from self_nomad.intake.models import (
+    AddOperation,
+    DeleteOperation,
+    ProposalRequest,
+    ReplaceOperation,
+)
 from self_nomad.intake.store import IntakeReceipt, IntakeStore
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
@@ -77,6 +84,10 @@ class IntakeSubmitResult(BaseModel):
     suggested_next: list[str] = Field(default_factory=list)
 
 
+class InjectedCrash(RuntimeError):
+    """Test-only process-crash simulation; leaves receipt unrecovered."""
+
+
 class IntakeService:
     def __init__(
         self,
@@ -84,6 +95,7 @@ class IntakeService:
         *,
         state_root: Path | None = None,
         git: GitBackend | None = None,
+        fault_after: str | None = None,
     ) -> None:
         self.repository = repository
         self.git = git or GitBackend(repository.root)
@@ -92,6 +104,12 @@ class IntakeService:
             repository, state_root=state_root, git=self.git, store=self.proposal_store
         )
         self.store = IntakeStore(self.proposal_store)
+        # Test-only injection points for crash-window coverage.
+        self._fault_after = fault_after
+
+    def _checkpoint(self, name: str) -> None:
+        if self._fault_after == name:
+            raise InjectedCrash(f"injected fault after {name}")
 
     def _load_policy(self) -> Policy:
         manifest = self.repository.load_manifest()
@@ -101,6 +119,14 @@ class IntakeService:
 
     def _resolve_branch(self, request: ProposalRequest) -> str:
         return request.target_branch or self.git.current_branch()
+
+    def _enforce_request_size(self, request: ProposalRequest, policy: Policy) -> None:
+        size = len(request.canonical_bytes())
+        if size > policy.limits.maximum_request_bytes:
+            raise IntakeRequestTooLargeError(
+                f"request exceeds maximum_request_bytes ({policy.limits.maximum_request_bytes})",
+                code="INTAKE_REQUEST_TOO_LARGE",
+            )
 
     def _operation_summaries(
         self, request: ProposalRequest, *, policy: Policy
@@ -115,11 +141,8 @@ class IntakeService:
                     code="INTAKE_CONTENT_TOO_LARGE",
                 )
             digest = operation.content_sha256()
-            if (
-                operation.expected_after_sha256 is not None
-                and digest is not None
-                and operation.expected_after_sha256 != digest
-            ):
+            expected_after = getattr(operation, "expected_after_sha256", None)
+            if expected_after is not None and digest is not None and expected_after != digest:
                 raise IntakeContentUnsafeError(
                     f"expected_after_sha256 does not match content for {operation.path}",
                     code="INTAKE_CONTENT_UNSAFE",
@@ -130,8 +153,8 @@ class IntakeService:
                     path=operation.path,
                     utf8_byte_count=size,
                     content_sha256=digest,
-                    expected_before_sha256=operation.expected_before_sha256,
-                    expected_after_sha256=operation.expected_after_sha256 or digest,
+                    expected_before_sha256=getattr(operation, "expected_before_sha256", None),
+                    expected_after_sha256=expected_after or digest,
                 )
             )
         return summaries
@@ -142,7 +165,6 @@ class IntakeService:
         if not policy.validation.scan_for_secrets:
             return []
         findings: list[Finding] = []
-        # Scan operation content.
         for operation in request.operations:
             data = operation.content_bytes()
             if data is None:
@@ -156,7 +178,6 @@ class IntakeService:
                         path=operation.path,
                     )
                 )
-        # Scan provenance text for the same high-confidence patterns.
         provenance_bits = [
             request.request_id,
             request.reason,
@@ -174,6 +195,90 @@ class IntakeService:
                     path=None,
                 )
             )
+        return findings
+
+    def _target_tree_findings(
+        self, request: ProposalRequest, *, base_commit: str
+    ) -> list[Finding]:
+        findings: list[Finding] = []
+        seen: set[str] = set()
+        for operation in request.operations:
+            if operation.path in seen:
+                findings.append(
+                    Finding(
+                        severity="error",
+                        code="INTAKE_DUPLICATE_PATH",
+                        message="duplicate operation path in request",
+                        path=operation.path,
+                    )
+                )
+                continue
+            seen.add(operation.path)
+            entry = self.git.path_at_commit(base_commit, operation.path)
+            if entry.kind == "symlink":
+                findings.append(
+                    Finding(
+                        severity="blocker",
+                        code="INTAKE_TARGET_SYMLINK",
+                        message="target path is a symbolic link in the target commit",
+                        path=operation.path,
+                    )
+                )
+                continue
+            if entry.kind in {"tree", "other"}:
+                findings.append(
+                    Finding(
+                        severity="error",
+                        code="INTAKE_TARGET_UNSUPPORTED",
+                        message="target path is not a regular blob in the target commit",
+                        path=operation.path,
+                    )
+                )
+                continue
+            if isinstance(operation, AddOperation):
+                if entry.kind != "missing":
+                    findings.append(
+                        Finding(
+                            severity="error",
+                            code="INTAKE_ADD_EXISTS",
+                            message="add target already exists on the target branch",
+                            path=operation.path,
+                        )
+                    )
+                continue
+            if isinstance(operation, ReplaceOperation | DeleteOperation):
+                if entry.kind == "missing":
+                    findings.append(
+                        Finding(
+                            severity="error",
+                            code="INTAKE_TARGET_MISSING",
+                            message="replace/delete target is missing on the target branch",
+                            path=operation.path,
+                        )
+                    )
+                    continue
+                if entry.kind != "blob" or entry.sha256 is None:
+                    findings.append(
+                        Finding(
+                            severity="error",
+                            code="INTAKE_TARGET_UNSUPPORTED",
+                            message="target path is not a regular blob in the target commit",
+                            path=operation.path,
+                        )
+                    )
+                    continue
+                if (
+                    operation.expected_before_sha256 is not None
+                    and operation.expected_before_sha256 != entry.sha256
+                ):
+                    findings.append(
+                        Finding(
+                            severity="error",
+                            code="INTAKE_BEFORE_MISMATCH",
+                            message="expected_before_sha256 does not match target-branch blob",
+                            path=operation.path,
+                        )
+                    )
         return findings
 
     def _suggested_next(self, status: ProposalStatus | None, *, eligible: bool) -> list[str]:
@@ -196,6 +301,7 @@ class IntakeService:
 
     def preview(self, request: ProposalRequest) -> IntakePreviewResult:
         policy = self._load_policy()
+        self._enforce_request_size(request, policy)
         if len(request.operations) > policy.limits.maximum_proposal_files:
             raise IntakePolicyRejectedError(
                 "request exceeds maximum_proposal_files",
@@ -206,36 +312,13 @@ class IntakeService:
         base_commit = self.git.head(f"refs/heads/{branch}")
         summaries = self._operation_summaries(request, policy=policy)
         findings = self._secret_findings(request, policy=policy)
-        # Before-hash soft checks against the live repository (preview only).
-        for operation in request.operations:
-            if operation.kind == "delete" or operation.expected_before_sha256 is None:
-                continue
-            target = self.repository.root / operation.path
-            if not target.is_file():
-                findings.append(
-                    Finding(
-                        severity="error",
-                        code="INTAKE_BEFORE_MISSING",
-                        message="expected file is missing for before-hash check",
-                        path=operation.path,
-                    )
-                )
-                continue
-            if sha256_file(target) != operation.expected_before_sha256:
-                findings.append(
-                    Finding(
-                        severity="error",
-                        code="INTAKE_BEFORE_MISMATCH",
-                        message="expected_before_sha256 does not match repository content",
-                        path=operation.path,
-                    )
-                )
+        findings.extend(self._target_tree_findings(request, base_commit=base_commit))
         risk = classify_proposal_risk(request.operations)
         digest = request.canonical_digest()
         existing_id: UUID | None = None
         existing_status: ProposalStatus | None = None
         receipt = self.store.load_receipt(request.request_id)
-        if receipt is not None and receipt.status == "completed" and receipt.proposal_id:
+        if receipt is not None and receipt.status == "completed":
             try:
                 record = self.proposal_store.load(receipt.proposal_id)
                 existing_id = record.proposal.id
@@ -272,88 +355,162 @@ class IntakeService:
                 code="INTAKE_POLICY_REJECTED",
             )
         digest = preview.request_digest
+        # Ensure lock parent exists only when submitting (durable path).
+        self.store.ensure_writable()
         with FileLock(self.store.lock_path, timeout=30):
-            receipt = self.store.load_receipt(request.request_id)
-            if receipt is not None:
-                if receipt.request_digest != digest:
-                    raise IntakeIdConflictError(
-                        "request_id was reused with a different payload",
-                        code="INTAKE_ID_CONFLICT",
-                    )
-                if receipt.status == "completed" and receipt.proposal_id is not None:
-                    record = self.proposal_store.load(receipt.proposal_id)
-                    return self._submit_result(
-                        request,
-                        preview,
-                        record,
-                        reused=True,
-                    )
-                if receipt.status == "pending" and receipt.proposal_id is not None:
-                    # Crash recovery: proposal was created; complete the receipt.
-                    try:
-                        record = self.proposal_store.load(receipt.proposal_id)
-                    except SelfNomadError as exc:
-                        raise IntakeSubmissionFailedError(
-                            "interrupted submission is not recoverable",
-                            code="INTAKE_SUBMISSION_FAILED",
-                        ) from exc
-                    receipt.status = "completed"
-                    receipt.error = None
-                    self.store.save_receipt(receipt)
-                    self.store.clear_staging(digest)
-                    return self._submit_result(request, preview, record, reused=True)
-                if receipt.status == "failed":
-                    # Allow retry of a failed attempt with the same payload.
-                    pass
-                elif receipt.status == "pending" and receipt.proposal_id is None:
-                    # Resume incomplete staging/materialization for same digest.
-                    pass
+            return self._submit_locked(request, preview, digest)
 
-            # Register durable intent before materialization.
-            receipt = IntakeReceipt(
-                request_id=request.request_id,
-                request_digest=digest,
-                status="pending",
+    def _submit_locked(
+        self,
+        request: ProposalRequest,
+        preview: IntakePreviewResult,
+        digest: str,
+    ) -> IntakeSubmitResult:
+        receipt = self.store.load_receipt(request.request_id)
+        if receipt is not None:
+            if receipt.request_digest != digest:
+                raise IntakeIdConflictError(
+                    "request_id was reused with a different payload",
+                    code="INTAKE_ID_CONFLICT",
+                )
+            return self._resume_or_complete(request, preview, receipt)
+
+        proposal_id = uuid4()
+        receipt = IntakeReceipt(
+            request_id=request.request_id,
+            request_digest=digest,
+            status="pending",
+            proposal_id=proposal_id,
+        )
+        self.store.save_receipt(receipt)
+        self._checkpoint("pending_receipt")
+        return self._execute_submission(request, preview, receipt)
+
+    def _resume_or_complete(
+        self,
+        request: ProposalRequest,
+        preview: IntakePreviewResult,
+        receipt: IntakeReceipt,
+    ) -> IntakeSubmitResult:
+        proposal_id = receipt.proposal_id
+        if receipt.status == "completed":
+            record = self.proposal_store.load(proposal_id)
+            self.store.clear_staging(receipt.request_digest)
+            return self._submit_result(preview, record, reused=True)
+
+        if receipt.status == "failed":
+            raise IntakeSubmissionFailedError(
+                f"prior submission for proposal {proposal_id} failed"
+                + (f": {receipt.error}" if receipt.error else ""),
+                code="INTAKE_SUBMISSION_FAILED",
             )
+
+        # pending
+        try:
+            record = self.proposal_store.load(proposal_id)
+        except ProposalNotFoundError:
+            # Crash after receipt, before draft: create reserved proposal.
+            return self._execute_submission(request, preview, receipt)
+
+        if record.status is ProposalStatus.DRAFT:
+            return self._materialize_and_complete(
+                request, preview, receipt, record, reused=True
+            )
+        if record.status is ProposalStatus.FAILED:
+            raise IntakeSubmissionFailedError(
+                f"proposal {proposal_id} is failed; request_id is reserved",
+                code="INTAKE_SUBMISSION_FAILED",
+            )
+        # Materialized or later: complete receipt and reuse.
+        receipt.status = "completed"
+        receipt.error = None
+        self.store.save_receipt(receipt)
+        self.store.clear_staging(receipt.request_digest)
+        return self._submit_result(preview, record, reused=True)
+
+    def _execute_submission(
+        self,
+        request: ProposalRequest,
+        preview: IntakePreviewResult,
+        receipt: IntakeReceipt,
+    ) -> IntakeSubmitResult:
+        try:
+            operations = self._stage_operations(request, digest=receipt.request_digest)
+            self._checkpoint("staging")
+            provenance = IntakeProvenance(
+                request_id=request.request_id,
+                request_digest=receipt.request_digest,
+                runtime=request.source.runtime,
+                agent_identifier=request.source.agent_identifier,
+                correlation_id=request.source.correlation_id,
+            )
+            record = self.proposals.create_draft(
+                reason=request.reason,
+                operations=operations,
+                target_branch=preview.target_branch,
+                proposer=Proposer(type="agent", identifier=request.source.agent_identifier),
+                source_adapter=request.source.runtime,
+                intake=provenance,
+                proposal_id=receipt.proposal_id,
+            )
+            self._checkpoint("proposal_record")
+            return self._materialize_and_complete(
+                request, preview, receipt, record, reused=False
+            )
+        except InjectedCrash:
+            # Simulate hard process exit: durable pending state remains as-is.
+            raise
+        except IntakeIdConflictError:
+            raise
+        except Exception as exc:
+            receipt.status = "failed"
+            receipt.error = type(exc).__name__
             self.store.save_receipt(receipt)
-            try:
-                operations = self._stage_operations(request, digest=digest)
-                provenance = IntakeProvenance(
-                    request_id=request.request_id,
-                    request_digest=digest,
-                    runtime=request.source.runtime,
-                    agent_identifier=request.source.agent_identifier,
-                    correlation_id=request.source.correlation_id,
-                )
-                record = self.proposals.create(
-                    reason=request.reason,
-                    operations=operations,
-                    target_branch=preview.target_branch,
-                    proposer=Proposer(type="agent", identifier=request.source.agent_identifier),
-                    source_adapter=request.source.runtime,
-                    intake=provenance,
-                )
-                receipt.status = "completed"
-                receipt.proposal_id = record.proposal.id
-                receipt.error = None
-                self.store.save_receipt(receipt)
-                self.store.clear_staging(digest)
-                return self._submit_result(request, preview, record, reused=False)
-            except IntakeIdConflictError:
-                raise
-            except Exception as exc:
-                receipt.status = "failed"
-                receipt.error = type(exc).__name__
-                self.store.save_receipt(receipt)
-                if isinstance(exc, SelfNomadError):
-                    raise IntakeSubmissionFailedError(
-                        str(exc),
-                        code="INTAKE_SUBMISSION_FAILED",
-                    ) from exc
+            if isinstance(exc, SelfNomadError):
                 raise IntakeSubmissionFailedError(
-                    "intake submission failed",
+                    str(exc),
                     code="INTAKE_SUBMISSION_FAILED",
                 ) from exc
+            raise IntakeSubmissionFailedError(
+                "intake submission failed",
+                code="INTAKE_SUBMISSION_FAILED",
+            ) from exc
+
+    def _materialize_and_complete(
+        self,
+        request: ProposalRequest,
+        preview: IntakePreviewResult,
+        receipt: IntakeReceipt,
+        record: ProposalRecord,
+        *,
+        reused: bool,
+    ) -> IntakeSubmitResult:
+        try:
+            if record.status is ProposalStatus.DRAFT:
+                record = self.proposals.materialize(record.proposal.id)
+            self._checkpoint("materialized")
+            self._checkpoint("before_completed_receipt")
+            receipt.status = "completed"
+            receipt.error = None
+            self.store.save_receipt(receipt)
+            self._checkpoint("completed_receipt")
+            self.store.clear_staging(receipt.request_digest)
+            return self._submit_result(preview, record, reused=reused)
+        except InjectedCrash:
+            raise
+        except Exception as exc:
+            receipt.status = "failed"
+            receipt.error = type(exc).__name__
+            self.store.save_receipt(receipt)
+            if isinstance(exc, SelfNomadError):
+                raise IntakeSubmissionFailedError(
+                    str(exc),
+                    code="INTAKE_SUBMISSION_FAILED",
+                ) from exc
+            raise IntakeSubmissionFailedError(
+                "intake submission failed",
+                code="INTAKE_SUBMISSION_FAILED",
+            ) from exc
 
     def _stage_operations(
         self, request: ProposalRequest, *, digest: str
@@ -361,10 +518,9 @@ class IntakeService:
         operations: list[FileOperation] = []
         for index, operation in enumerate(request.operations):
             content_source: str | None = None
-            after = operation.expected_after_sha256
-            if operation.content is not None:
-                data = operation.content_bytes()
-                assert data is not None
+            after = getattr(operation, "expected_after_sha256", None)
+            data = operation.content_bytes()
+            if data is not None:
                 staged = self.store.stage_content(digest, index, data)
                 content_source = str(staged)
                 computed = sha256_file(staged)
@@ -379,7 +535,7 @@ class IntakeService:
                 FileOperation(
                     kind=operation.kind,
                     path=operation.path,
-                    expected_before_sha256=operation.expected_before_sha256,
+                    expected_before_sha256=getattr(operation, "expected_before_sha256", None),
                     expected_after_sha256=after,
                     content_source=content_source,
                 )
@@ -388,14 +544,13 @@ class IntakeService:
 
     def _submit_result(
         self,
-        request: ProposalRequest,
         preview: IntakePreviewResult,
         record: ProposalRecord,
         *,
         reused: bool,
     ) -> IntakeSubmitResult:
         return IntakeSubmitResult(
-            request_id=request.request_id,
+            request_id=preview.request_id,
             request_digest=preview.request_digest,
             reused=reused,
             proposal_id=record.proposal.id,

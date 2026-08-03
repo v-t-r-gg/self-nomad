@@ -45,6 +45,7 @@ class SelfNomad:
         from self_nomad.domain import FileOperation
 
         service = self.proposals(state_root=state_root)
+        service.store.ensure_writable()
         staging = Path(tempfile.mkdtemp(prefix="import-", dir=service.store.root))
         default_registry().get(plan.adapter).materialize_import(plan, staging)
         operations: list[FileOperation] = []
