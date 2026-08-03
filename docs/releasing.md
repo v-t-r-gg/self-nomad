@@ -97,10 +97,16 @@ For each wheel and sdist the harness:
 
 1. Creates a fresh temporary virtual environment
 2. Installs the artifact (non-editable)
-3. Asserts `import self_nomad` and version `0.1.0rc1` (or the release version)
+3. Asserts `import self_nomad`, `importlib.metadata.version("self-nomad")`, and
+   the version parsed from the artifact filename all agree (never `0+unknown`)
 4. Runs `self-nomad --version` and `self-nomad --help`
 5. Initializes a temporary repository and runs strict JSON validation
 6. Confirms `py.typed` is present on the installed package
+
+The harness upgrades pip and resolves runtime dependencies from the package
+index (network). The local wheel/sdist is installed from disk; there is no
+offline wheelhouse or `--no-index` mode unless you pre-seed a cache/mirror
+yourself.
 
 Failures name the artifact and command. Re-run only after fixing and
 rebuilding; do not tag on smoke failure.
@@ -194,10 +200,12 @@ uv venv /tmp/self-nomad-pypi && \
 | --- | --- |
 | Wheel / sdist filename | `project.version` in `pyproject.toml` |
 | `importlib.metadata.version("self-nomad")` | installed package metadata |
-| `self_nomad.__version__` | `importlib.metadata` (fallback only when uninstalled) |
+| `self_nomad.__version__` | `importlib.metadata` when installed; `0+unknown` if uninstalled |
 | `self-nomad --version` | `self_nomad.__version__` |
 
-All four must agree for a release commit.
+For a release commit the first three surfaces (and the CLI after install) must
+agree. The `0+unknown` sentinel must appear only when package metadata is
+absent.
 
 ## Security notes for releasers
 

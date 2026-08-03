@@ -9,4 +9,4 @@ __all__ = ["SelfNomad", "__version__"]
 try:
     __version__ = version("self-nomad")
 except PackageNotFoundError:  # pragma: no cover - uninstalled source tree only
-    __version__ = "0.1.0rc1"
+    __version__ = "0+unknown"

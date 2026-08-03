@@ -3,8 +3,12 @@
 
 Creates a fresh virtual environment per artifact, installs without editable
 mode, and exercises import, version, CLI help, init, and strict JSON validate.
-Avoids network access after the artifact and its locked dependencies are
-available by preferring offline installs when a local package cache exists.
+
+Network behavior: each smoke run upgrades pip and installs the artifact plus
+its declared runtime dependencies from the configured package index (typically
+PyPI). The local artifact path is installed from disk; dependency resolution
+still requires network access unless the environment already has a populated
+pip cache or mirror. This harness does not implement an offline wheelhouse.
 
 Usage (from repository root, after ``uv build``)::
 
@@ -21,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,7 +33,6 @@ import tempfile
 import venv
 from pathlib import Path
 
-EXPECTED_VERSION = "0.1.0rc1"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -70,6 +74,21 @@ def find_artifacts(dist_dir: Path) -> list[Path]:
     return artifacts
 
 
+def version_from_artifact_name(artifact: Path) -> str:
+    """Derive the packaged version from a wheel or sdist filename."""
+    name = artifact.name
+    if name.endswith(".whl"):
+        # self_nomad-<version>-py3-none-any.whl
+        match = re.fullmatch(r"self_nomad-(.+)-py3-none-any\.whl", name)
+        if match:
+            return match.group(1)
+    elif name.endswith(".tar.gz"):
+        match = re.fullmatch(r"self_nomad-(.+)\.tar\.gz", name)
+        if match:
+            return match.group(1)
+    raise SmokeError(f"[{name}] cannot parse version from artifact filename")
+
+
 def venv_python(venv_dir: Path) -> Path:
     if os.name == "nt":
         return venv_dir / "Scripts" / "python.exe"
@@ -94,13 +113,12 @@ def isolated_env(state_root: Path) -> dict[str, str]:
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_CONFIG_GLOBAL"] = str(home / ".gitconfig")
-    # Prevent pip from reaching the network when a cache already has wheels.
-    # First install may still need index access for dependencies.
     return env
 
 
-def smoke_artifact(artifact: Path, work_root: Path, *, offline_after_bootstrap: bool) -> None:
+def smoke_artifact(artifact: Path, work_root: Path) -> None:
     name = artifact.name
+    expected_version = version_from_artifact_name(artifact)
     venv_dir = work_root / f"venv-{artifact.stem.replace('.', '_')}"
     state_root = work_root / f"state-{artifact.stem.replace('.', '_')}"
     repo = work_root / f"repo-{artifact.stem.replace('.', '_')}"
@@ -111,17 +129,22 @@ def smoke_artifact(artifact: Path, work_root: Path, *, offline_after_bootstrap: 
     python = venv_python(venv_dir)
     env = isolated_env(state_root)
 
-    # Bootstrap pip tooling, then install the local artifact.
+    # Bootstrap pip tooling (network), then install the local artifact.
+    # Dependency wheels are resolved from the package index (network).
     run(
         [str(python), "-m", "pip", "install", "--upgrade", "pip"],
         artifact=name,
         step="upgrade pip",
         env=env,
     )
-    install_cmd = [str(python), "-m", "pip", "install", str(artifact.resolve())]
-    run(install_cmd, artifact=name, step="install artifact", env=env)
+    run(
+        [str(python), "-m", "pip", "install", str(artifact.resolve())],
+        artifact=name,
+        step="install artifact",
+        env=env,
+    )
 
-    # Import and version.
+    # Import and version: public attribute, installed metadata, artifact name.
     completed = run(
         [
             str(python),
@@ -135,13 +158,23 @@ def smoke_artifact(artifact: Path, work_root: Path, *, offline_after_bootstrap: 
         env=env,
     )
     lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
-    if lines != [EXPECTED_VERSION, EXPECTED_VERSION]:
+    if len(lines) != 2:
+        raise SmokeError(f"[{name}] unexpected version output: {lines!r}")
+    imported, metadata = lines
+    if imported != metadata:
         raise SmokeError(
-            f"[{name}] version mismatch: expected {EXPECTED_VERSION!r} twice, got {lines!r}"
+            f"[{name}] import version {imported!r} != metadata version {metadata!r}"
         )
+    if imported != expected_version:
+        raise SmokeError(
+            f"[{name}] installed version {imported!r} != artifact name version "
+            f"{expected_version!r}"
+        )
+    if imported in {"", "0+unknown"}:
+        raise SmokeError(f"[{name}] installed version must not be the source-tree sentinel")
 
     # py.typed must be present in the installed distribution.
-    completed = run(
+    run(
         [
             str(python),
             "-c",
@@ -164,9 +197,9 @@ def smoke_artifact(artifact: Path, work_root: Path, *, offline_after_bootstrap: 
         step="self-nomad --version",
         env=env,
     )
-    if version_out.stdout.strip() != EXPECTED_VERSION:
+    if version_out.stdout.strip() != expected_version:
         raise SmokeError(
-            f"[{name}] CLI version {version_out.stdout.strip()!r} != {EXPECTED_VERSION!r}"
+            f"[{name}] CLI version {version_out.stdout.strip()!r} != {expected_version!r}"
         )
 
     run([str(cli), "--help"], artifact=name, step="self-nomad --help", env=env)
@@ -203,7 +236,7 @@ def smoke_artifact(artifact: Path, work_root: Path, *, offline_after_bootstrap: 
     if not isinstance(result, dict) or result.get("valid") is not True:
         raise SmokeError(f"[{name}] validate result not successful: {result!r}")
 
-    print(f"OK  {name}")
+    print(f"OK  {name}  version={expected_version}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -237,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for artifact in artifacts:
             try:
-                smoke_artifact(artifact, work_root, offline_after_bootstrap=True)
+                smoke_artifact(artifact, work_root)
             except SmokeError as exc:
                 failures.append(str(exc))
                 print(f"FAIL {artifact.name}: {exc}", file=sys.stderr)

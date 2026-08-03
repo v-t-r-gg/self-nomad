@@ -75,9 +75,11 @@ Layout:
 ## Versioning
 
 `project.version` in `pyproject.toml` is the packaging source of truth.
-`self_nomad.__version__` reads installed metadata via `importlib.metadata` and
-falls back only for an uninstalled source tree. Do not reintroduce a second
-hand-maintained version string in application modules.
+`self_nomad.__version__` reads installed metadata via `importlib.metadata`.
+An uninstalled source tree falls back to the sentinel `0+unknown`—never a
+hard-coded release version. Tests and the release smoke harness must derive
+expected versions from `pyproject.toml` or installed/artifact metadata, not
+string literals for a specific release.
 
 ## Pull requests
 

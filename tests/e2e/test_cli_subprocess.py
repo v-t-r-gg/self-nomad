@@ -10,10 +10,19 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
+from self_nomad import __version__
 from self_nomad.application import SelfNomad
 from tests.helpers import configure_git_identity, isolated_state_env, run_git
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def project_version() -> str:
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(data["project"]["version"])
 
 
 def _run_cli(env: dict[str, str], *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -32,7 +41,8 @@ def test_subprocess_version_matches_package(tmp_path: Path) -> None:
     env = isolated_state_env(tmp_path / "state")
     completed = _run_cli(env, "--version")
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "0.1.0rc1"
+    assert completed.stdout.strip() == project_version()
+    assert completed.stdout.strip() == __version__
 
 
 def test_subprocess_init_and_strict_json_validate(tmp_path: Path) -> None:

@@ -8,16 +8,24 @@ from __future__ import annotations
 
 import json
 import shutil
+import tomllib
 from pathlib import Path
 
 from typer.testing import CliRunner
 
+from self_nomad import __version__
 from self_nomad.application import SelfNomad
 from self_nomad.cli import app
 from tests.helpers import configure_git_identity, run_git
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
+ROOT = Path(__file__).resolve().parents[2]
 runner = CliRunner()
+
+
+def project_version() -> str:
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(data["project"]["version"])
 
 
 def _json_invoke(args: list[str]) -> dict[str, object]:
@@ -29,7 +37,8 @@ def _json_invoke(args: list[str]) -> dict[str, object]:
 def test_cli_version_and_help_inprocess() -> None:
     version = runner.invoke(app, ["--version"], catch_exceptions=False)
     assert version.exit_code == 0
-    assert version.stdout.strip() == "0.1.0rc1"
+    assert version.stdout.strip() == project_version()
+    assert version.stdout.strip() == __version__
     help_result = runner.invoke(app, ["--help"], catch_exceptions=False)
     assert help_result.exit_code == 0
     assert "Manage a portable agent self repository" in help_result.stdout

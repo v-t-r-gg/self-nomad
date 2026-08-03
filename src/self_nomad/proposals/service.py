@@ -60,6 +60,7 @@ class ProposalService:
                     raise ConflictError(
                         f"content source exceeds maximum_file_bytes: {operation.path}"
                     )
+                self._require_utf8_bytes(source.read_bytes(), path=operation.path)
         branch = target_branch or self.git.current_branch()
         proposal = Proposal(
             repository_id=manifest.self.id,
@@ -73,6 +74,13 @@ class ProposalService:
         record = ProposalRecord(proposal=proposal)
         self.store.save(record)
         return self.materialize(proposal.id)
+
+    @staticmethod
+    def _require_utf8_bytes(content: bytes, *, path: str) -> None:
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ConflictError(f"content source is not valid UTF-8: {path}") from exc
 
     @staticmethod
     def _classify_risk(
@@ -152,9 +160,10 @@ class ProposalService:
             if source_input.is_symlink() or not source_input.is_file():
                 raise ConflictError("content source must be a regular file")
             source = source_input.resolve(strict=True)
-            # Byte-exact copy so expected_after_sha256 matches on Windows when
-            # sources use CRLF (text mode would normalize newlines and break hashes).
+            # Validate UTF-8, then write the original bytes so CRLF and other
+            # valid UTF-8 sequences survive hash checks without newline rewrite.
             content = source.read_bytes()
+            self._require_utf8_bytes(content, path=operation.path)
             atomic_write_bytes(target, content)
             if (
                 operation.expected_after_sha256
