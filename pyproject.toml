@@ -66,6 +66,7 @@ dev = [
 [dependency-groups]
 dev = [
   "build>=1.2",
+  "jsonschema>=4.26.0",
   "mypy>=1.14",
   "pytest>=8.3",
   "pytest-cov>=6.0",
@@ -82,6 +83,7 @@ include = [
   "/tests",
   "/docs",
   "/scripts",
+  "/examples",
   "/LICENSE",
   "/README.md",
   "/CHANGELOG.md",

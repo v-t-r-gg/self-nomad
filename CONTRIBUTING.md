@@ -12,6 +12,7 @@ uv lock --check
 uv sync --extra dev
 uv run ruff check .
 uv run mypy
+uv run python scripts/export_proposal_request_schema.py --check
 uv run pytest --cov=self_nomad --cov-report=term-missing
 uv build
 uv run python scripts/release_smoke.py
