@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 from typing import Annotated, NoReturn
 from uuid import UUID
@@ -12,7 +13,19 @@ from self_nomad import __version__
 from self_nomad.adapters import default_registry
 from self_nomad.application import SelfNomad
 from self_nomad.domain import FileOperation, RuntimeRef
-from self_nomad.errors import AmbiguousRuntimeError, RepositoryNotFoundError, SelfNomadError
+from self_nomad.errors import (
+    AmbiguousRuntimeError,
+    IntakeError,
+    RepositoryNotFoundError,
+    SelfNomadError,
+)
+from self_nomad.filesystem import contained_path
+from self_nomad.intake import (
+    load_proposal_request_from_path,
+    load_proposal_request_from_stream,
+)
+from self_nomad.manifest.loader import load_yaml
+from self_nomad.policy import Policy
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
 console = Console()
@@ -96,6 +109,78 @@ def init(
     emit("init", True, result)
     if not state.json_output:
         console.print(f"Initialized self repository at [bold]{instance.repository.root}[/bold]")
+
+
+@app.command("intake")
+def intake_command(
+    request: Annotated[
+        Path,
+        typer.Option("--request", exists=False, dir_okay=False, readable=False),
+    ],
+    submit: Annotated[bool, typer.Option("--submit")] = False,
+) -> None:
+    """Preview or submit an agent proposal request (preview is default)."""
+    try:
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        manifest = instance.repository.load_manifest()
+        policy = Policy.model_validate(
+            load_yaml(
+                contained_path(instance.repository.root, manifest.policy, must_exist=True)
+            )
+        )
+        max_bytes = policy.limits.maximum_request_bytes
+        if str(request) == "-":
+            loaded = load_proposal_request_from_stream(
+                sys.stdin.buffer, maximum_request_bytes=max_bytes
+            )
+        else:
+            loaded = load_proposal_request_from_path(request, maximum_request_bytes=max_bytes)
+        service = instance.intake()
+        if submit:
+            result = service.submit(loaded)
+            payload = result.model_dump(mode="json")
+            emit("intake", True, payload)
+            if not state.json_output:
+                verb = "Reused" if result.reused else "Submitted"
+                console.print(
+                    f"{verb} proposal [bold]{result.proposal_id}[/bold] "
+                    f"({result.status}); next: {', '.join(result.suggested_next) or 'none'}"
+                )
+            return
+        preview = service.preview(loaded)
+        payload = preview.model_dump(mode="json")
+        emit("intake", preview.eligible, payload)
+        if not state.json_output:
+            status = "eligible" if preview.eligible else "not eligible"
+            console.print(
+                f"Intake preview {status}; risk={preview.risk}; "
+                f"ops={len(preview.operations)}; next: "
+                f"{', '.join(preview.suggested_next) or 'none'}"
+            )
+            for finding in preview.findings:
+                console.print(f"{finding.severity.upper()} {finding.code}: {finding.message}")
+        if not preview.eligible:
+            raise typer.Exit(3)
+    except IntakeError as exc:
+        if state.json_output:
+            typer.echo(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "command": "intake",
+                        "ok": False,
+                        "result": {"code": exc.code},
+                        "warnings": [],
+                        "errors": [f"{exc.code}: {exc}"],
+                    },
+                    sort_keys=True,
+                )
+            )
+        else:
+            console.print(f"[red]{exc.code}:[/red] {exc}")
+        raise typer.Exit(2) from exc
+    except (SelfNomadError, OSError, ValueError) as exc:
+        fail("intake", exc)
 
 
 @app.command()
