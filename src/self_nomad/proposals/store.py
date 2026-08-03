@@ -12,17 +12,19 @@ from self_nomad.filesystem import atomic_write_text
 
 class ProposalStore:
     def __init__(self, repository_root: Path, state_root: Path | None = None) -> None:
-        repository_key = hashlib.sha256(str(repository_root.resolve()).encode()).hexdigest()[:24]
+        # Compact path segments keep Git worktree directories under Windows
+        # path limits when state lives under deep temporary roots.
+        repository_key = hashlib.sha256(str(repository_root.resolve()).encode()).hexdigest()[:16]
         base = state_root or user_state_path("self-nomad", appauthor=False)
-        self.root = base / "repos" / repository_key
-        self.records = self.root / "proposals"
-        self.worktrees = self.root / "worktrees"
+        self.root = base / "r" / repository_key
+        self.records = self.root / "p"
+        self.worktrees = self.root / "w"
         self.lock_path = self.root / "lock"
         self.records.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.worktrees.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def path_for(self, proposal_id: UUID) -> Path:
-        return self.records / f"{proposal_id}.json"
+        return self.records / f"{proposal_id.hex}.json"
 
     def save(self, record: ProposalRecord) -> None:
         content = json.dumps(record.model_dump(mode="json"), indent=2, sort_keys=True) + "\n"

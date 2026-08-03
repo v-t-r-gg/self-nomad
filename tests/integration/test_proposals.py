@@ -6,6 +6,7 @@ import pytest
 from self_nomad.application import SelfNomad
 from self_nomad.domain import FileOperation, ProposalStatus
 from self_nomad.errors import ConflictError, ProposalStaleError
+from self_nomad.filesystem import sha256_file
 
 
 def git(root: Path, *args: str) -> str:
@@ -98,6 +99,52 @@ def test_before_hash_mismatch_fails_materialization(tmp_path: Path) -> None:
                     kind="replace",
                     path="memory/MEMORY.md",
                     expected_before_sha256="0" * 64,
+                    content_source=str(source),
+                )
+            ],
+        )
+
+
+def test_crlf_utf8_content_preserves_bytes_and_hashes(tmp_path: Path) -> None:
+    """CRLF line endings are valid UTF-8 and must survive byte-exact apply."""
+    app = committed_repository(tmp_path)
+    source = tmp_path / "memory.md"
+    payload = b"# Memory\r\n\r\nPortable fact with CRLF.\r\n"
+    source.write_bytes(payload)
+    digest = sha256_file(source)
+    service = app.proposals(state_root=tmp_path / "state")
+
+    record = service.create(
+        reason="CRLF portable fact",
+        operations=[
+            FileOperation(
+                kind="replace",
+                path="memory/MEMORY.md",
+                content_source=str(source),
+                expected_after_sha256=digest,
+            )
+        ],
+    )
+
+    assert record.status is ProposalStatus.MATERIALIZED
+    written = Path(record.worktree or "").joinpath("memory/MEMORY.md")
+    assert written.read_bytes() == payload
+    assert sha256_file(written) == digest
+
+
+def test_invalid_utf8_content_is_rejected(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    source = tmp_path / "binary.bin"
+    source.write_bytes(b"\xff\xfe\x00 not utf-8")
+    service = app.proposals(state_root=tmp_path / "state")
+
+    with pytest.raises(ConflictError, match="not valid UTF-8"):
+        service.create(
+            reason="Reject binary payload",
+            operations=[
+                FileOperation(
+                    kind="replace",
+                    path="memory/MEMORY.md",
                     content_source=str(source),
                 )
             ],

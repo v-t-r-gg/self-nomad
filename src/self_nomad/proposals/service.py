@@ -15,7 +15,7 @@ from self_nomad.errors import (
     ProposalStateError,
     ValidationFailedError,
 )
-from self_nomad.filesystem import atomic_write_text, contained_path, sha256_file
+from self_nomad.filesystem import atomic_write_bytes, atomic_write_text, contained_path, sha256_file
 from self_nomad.git import GitBackend
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
@@ -60,6 +60,7 @@ class ProposalService:
                     raise ConflictError(
                         f"content source exceeds maximum_file_bytes: {operation.path}"
                     )
+                self._require_utf8_bytes(source.read_bytes(), path=operation.path)
         branch = target_branch or self.git.current_branch()
         proposal = Proposal(
             repository_id=manifest.self.id,
@@ -73,6 +74,13 @@ class ProposalService:
         record = ProposalRecord(proposal=proposal)
         self.store.save(record)
         return self.materialize(proposal.id)
+
+    @staticmethod
+    def _require_utf8_bytes(content: bytes, *, path: str) -> None:
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ConflictError(f"content source is not valid UTF-8: {path}") from exc
 
     @staticmethod
     def _classify_risk(
@@ -100,8 +108,8 @@ class ProposalService:
             record = self.store.load(proposal_id)
             if record.status is not ProposalStatus.DRAFT:
                 raise ProposalStateError("only draft proposals can be materialized")
-            worktree = self.store.worktrees / str(proposal_id)
-            branch = f"self-nomad/proposal/{proposal_id}"
+            worktree = self.store.worktrees / proposal_id.hex
+            branch = f"self-nomad/proposal/{proposal_id.hex}"
             try:
                 self.git.worktree_add(worktree, branch, record.proposal.base_commit)
                 self._apply_operations(record.proposal.operations, worktree)
@@ -152,8 +160,11 @@ class ProposalService:
             if source_input.is_symlink() or not source_input.is_file():
                 raise ConflictError("content source must be a regular file")
             source = source_input.resolve(strict=True)
-            content = source.read_text(encoding="utf-8")
-            atomic_write_text(target, content)
+            # Validate UTF-8, then write the original bytes so CRLF and other
+            # valid UTF-8 sequences survive hash checks without newline rewrite.
+            content = source.read_bytes()
+            self._require_utf8_bytes(content, path=operation.path)
+            atomic_write_bytes(target, content)
             if (
                 operation.expected_after_sha256
                 and sha256_file(target) != operation.expected_after_sha256
