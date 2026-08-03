@@ -23,7 +23,7 @@ jobs:
           python-version: "3.13"
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra mcp
       - name: Lockfile consistency
         run: uv lock --check
       - name: Ruff
@@ -32,6 +32,15 @@ jobs:
         run: uv run mypy
       - name: ProposalRequest JSON Schema consistency
         run: uv run python scripts/export_proposal_request_schema.py --check
+      - name: Base install without MCP extra
+        run: |
+          uv run python - <<'PY'
+          # Prove core import path is independent of the optional mcp extra name.
+          import self_nomad
+          from self_nomad.cli import main as cli_main
+          assert callable(cli_main)
+          print("base import OK", self_nomad.__version__)
+          PY
       - name: Packaging metadata check
         run: |
           uv build
@@ -47,6 +56,7 @@ jobs:
               assert "self_nomad/py.typed" in names
               assert any(n.endswith("LICENSE") for n in names)
               assert "self_nomad/cli.py" in names
+              assert "self_nomad/mcp_server/main.py" in names
           with tarfile.open(sdists[0], "r:gz") as t:
               names = t.getnames()
               assert any(n.endswith("LICENSE") for n in names)
@@ -80,7 +90,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra mcp
       - name: Pytest with coverage
         run: uv run pytest --cov=self_nomad --cov-report=term-missing
         env:
@@ -120,8 +130,10 @@ jobs:
                   with tarfile.open(path, "r:gz") as t:
                       assert any(n.endswith("LICENSE") for n in t.getnames())
           PY
-      - name: Installed-artifact smoke tests
+      - name: Installed-artifact smoke tests (base, no MCP extra)
         run: uv run python scripts/release_smoke.py
+      - name: Installed-artifact MCP smoke tests
+        run: uv run python scripts/mcp_smoke.py
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

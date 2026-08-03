@@ -52,3 +52,14 @@ evaluates policy, secrets, and hashes without durable writes. Submit stages
 inline UTF-8 content under private state, creates a normal proposal, and records
 idempotent receipts keyed by request id and canonical digest. Approval and
 application remain outside intake.
+
+## Bounded MCP surface
+
+The optional `self-nomad-mcp` process wraps the same application services over
+local stdio MCP. It binds one absolute repository at startup, registers a
+closed seven-tool allow-list (status, repository validate, intake preview and
+submit, proposal list/get/validate), and exposes the packaged ProposalRequest
+schema as a read-only resource. Protocol traffic uses stdout only; diagnostics
+use stderr. The MCP layer does not add approve/apply/import/restore tools, HTTP
+listeners, or host configuration mutation. See [mcp.md](mcp.md) and
+[decisions/0006-bounded-mcp-surface.md](decisions/0006-bounded-mcp-surface.md).

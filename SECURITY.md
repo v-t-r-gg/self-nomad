@@ -15,3 +15,8 @@ All Git commands managed by self-nomad disable repository and global hooks.
 Configured Git clean/smudge/process filters remain trusted user infrastructure;
 do not use self-nomad with an untrusted filter executable. Proposal approval
 binds the resulting full Git tree and exact declared diff.
+
+The optional local MCP server (`self-nomad-mcp`) does not authenticate stdio
+clients. Only expose it on hosts and operator accounts you already trust with
+the managed repository. It never provides approve/apply tools; do not grant
+agents a separate shell that bypasses that boundary.

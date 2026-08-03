@@ -13,14 +13,16 @@ and change-governance layer around the agents you already run.
 
 ## Development status
 
-**Development follows `v0.1.0rc1`.** The deterministic core supports repository
-initialization and validation, isolated Git proposals with typed file
-operations, review, validation, approval, stale detection, atomic target-ref
-application, and committed audit records. Agent intake accepts structured JSON
-proposal requests (preview/submit) into that lifecycle without automatic
-approval. Hermes and OpenClaw adapters provide deterministic detection,
-import/restore plans, explicit fidelity and exclusion reporting, verified
-backups, and atomic file writes.
+**Development follows `v0.1.0rc1` toward `0.2.0`.** The deterministic core
+supports repository initialization and validation, isolated Git proposals with
+typed file operations, review, validation, approval, stale detection, atomic
+target-ref application, and committed audit records. Agent intake accepts
+structured JSON proposal requests (preview/submit) into that lifecycle without
+automatic approval. An optional local stdio MCP server exposes the same intake
+and review surface to MCP hosts without approve/apply tools. Hermes and
+OpenClaw adapters provide deterministic detection, import/restore plans,
+explicit fidelity and exclusion reporting, verified backups, and atomic file
+writes.
 
 Supported Python versions: **3.11, 3.12, and 3.13**. The package is intended to
 be **OS-independent**; CI exercises Ubuntu (3.11–3.13) plus macOS and Windows
@@ -52,6 +54,9 @@ git clone https://github.com/v-t-r-gg/self-nomad.git
 cd self-nomad
 uv sync --extra dev
 uv run self-nomad --version
+# Optional MCP surface:
+uv sync --extra dev --extra mcp
+uv run self-nomad-mcp --repo /absolute/path/to/agent-self
 ```
 
 Requires [uv](https://docs.astral.sh/uv/) and a local `git` on `PATH`.
@@ -150,6 +155,20 @@ self-nomad --repo ./my-agent apply PROPOSAL_ID
 See [docs/agent-intake.md](docs/agent-intake.md), the JSON Schema under
 `docs/schema/`, and examples in `examples/intake/`.
 
+## MCP agent surface (optional)
+
+Install `self-nomad[mcp]` and run a **fixed-repository** stdio server:
+
+```bash
+pip install 'self-nomad[mcp]'
+self-nomad-mcp --repo /absolute/path/to/agent-self
+```
+
+Agents may inspect the repository, preview/submit idempotent proposals, list
+and get sanitized reviews, and validate proposals. **Approval and apply stay
+on the CLI.** Host configuration examples for OpenClaw and Hermes are under
+`examples/mcp/` and [docs/mcp.md](docs/mcp.md).
+
 ## Documentation
 
 - [Repository format](docs/repository-format.md)
@@ -157,6 +176,7 @@ See [docs/agent-intake.md](docs/agent-intake.md), the JSON Schema under
 - [Threat model](docs/threat-model.md)
 - [Adapter authoring](docs/adapter-authoring.md)
 - [Agent intake](docs/agent-intake.md)
+- [MCP surface](docs/mcp.md) ([OpenClaw](docs/mcp-openclaw.md), [Hermes](docs/mcp-hermes.md))
 - [Releasing](docs/releasing.md) (maintainers)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)

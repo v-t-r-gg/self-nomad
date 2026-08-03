@@ -52,13 +52,20 @@ Changelog = "https://github.com/v-t-r-gg/self-nomad/blob/main/CHANGELOG.md"
 
 [project.scripts]
 self-nomad = "self_nomad.cli:main"
+self-nomad-mcp = "self_nomad.mcp_server.main:main"
 
 [project.optional-dependencies]
+mcp = [
+  "mcp>=2,<3",
+]
 dev = [
   "build>=1.2",
+  "jsonschema>=4.26.0",
+  "mcp>=2,<3",
   "mypy>=1.14",
   "pytest>=8.3",
   "pytest-cov>=6.0",
+  "pytest-asyncio>=0.24",
   "ruff>=0.9",
   "types-PyYAML>=6.0.12",
 ]
@@ -67,9 +74,11 @@ dev = [
 dev = [
   "build>=1.2",
   "jsonschema>=4.26.0",
+  "mcp>=2,<3",
   "mypy>=1.14",
   "pytest>=8.3",
   "pytest-cov>=6.0",
+  "pytest-asyncio>=0.24",
   "ruff>=0.9",
   "types-PyYAML>=6.0.12",
 ]
@@ -97,6 +106,8 @@ include = [
 addopts = "--strict-markers --strict-config"
 testpaths = ["tests"]
 pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
