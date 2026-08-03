@@ -7,22 +7,122 @@ on:
 permissions:
   contents: read
 
+# Pin third-party actions to full commit SHAs (Node 24-compatible releases).
+# Version comments document the human-readable tag next to each pin.
+
 jobs:
-  test:
+  quality:
+    name: Quality (Linux)
     runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync --extra dev
+      - name: Lockfile consistency
+        run: uv lock --check
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Mypy (strict)
+        run: uv run mypy
+      - name: Packaging metadata check
+        run: |
+          uv build
+          uv run python - <<'PY'
+          import tarfile, zipfile
+          from pathlib import Path
+          dist = Path("dist")
+          wheels = list(dist.glob("self_nomad-*.whl"))
+          sdists = list(dist.glob("self_nomad-*.tar.gz"))
+          assert wheels and sdists, "expected wheel and sdist"
+          with zipfile.ZipFile(wheels[0]) as z:
+              names = z.namelist()
+              assert "self_nomad/py.typed" in names
+              assert any(n.endswith("LICENSE") for n in names)
+              assert "self_nomad/cli.py" in names
+          with tarfile.open(sdists[0], "r:gz") as t:
+              names = t.getnames()
+              assert any(n.endswith("LICENSE") for n in names)
+              assert any(n.endswith("src/self_nomad/py.typed") for n in names)
+          print("packaging checks OK:", wheels[0].name, sdists[0].name)
+          PY
+
+  test:
+    name: Test ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - run: uv sync --extra dev
-      - run: uv run ruff check .
-      - run: uv run mypy
-      - run: uv run pytest --cov=self_nomad --cov-report=term-missing
-      - run: uv build
+      - name: Sync dependencies
+        run: uv sync --extra dev
+      - name: Pytest with coverage
+        run: uv run pytest --cov=self_nomad --cov-report=term-missing
+        env:
+          # Ensure coverage config is visible to subprocess CLI invocations.
+          COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
 
+  dist:
+    name: Distribution smoke
+    runs-on: ubuntu-latest
+    needs: [quality]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Sync build tooling
+        run: uv sync --extra dev
+      - name: Build wheel and sdist
+        run: uv build
+      - name: Inspect artifacts
+        run: |
+          uv run python - <<'PY'
+          import hashlib, tarfile, zipfile
+          from pathlib import Path
+          for path in sorted(Path("dist").iterdir()):
+              if not path.is_file():
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              print(f"{path.name}  sha256={digest}  size={path.stat().st_size}")
+              if path.suffix == ".whl":
+                  with zipfile.ZipFile(path) as z:
+                      assert "self_nomad/py.typed" in z.namelist()
+              elif path.name.endswith(".tar.gz"):
+                  with tarfile.open(path, "r:gz") as t:
+                      assert any(n.endswith("LICENSE") for n in t.getnames())
+          PY
+      - name: Installed-artifact smoke tests
+        run: uv run python scripts/release_smoke.py
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-package-distributions
+          path: dist/*
+          if-no-files-found: error
