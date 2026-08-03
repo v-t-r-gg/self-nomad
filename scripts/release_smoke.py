@@ -101,6 +101,12 @@ def venv_self_nomad(venv_dir: Path) -> Path:
     return venv_dir / "bin" / "self-nomad"
 
 
+def venv_self_nomad_mcp(venv_dir: Path) -> Path:
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "self-nomad-mcp.exe"
+    return venv_dir / "bin" / "self-nomad-mcp"
+
+
 def isolated_env(state_root: Path) -> dict[str, str]:
     home = state_root / "home"
     home.mkdir(parents=True, exist_ok=True)
@@ -235,6 +241,59 @@ def smoke_artifact(artifact: Path, work_root: Path) -> None:
     result = envelope.get("result")
     if not isinstance(result, dict) or result.get("valid") is not True:
         raise SmokeError(f"[{name}] validate result not successful: {result!r}")
+
+    # Optional MCP dependency must be absent from base installs.
+    missing = run(
+        [
+            str(python),
+            "-c",
+            "import importlib.util as u; "
+            "assert u.find_spec('mcp') is None, 'mcp should not be installed'; "
+            "assert u.find_spec('mcp_types') is None, 'mcp_types should not be installed'; "
+            "import self_nomad; print(self_nomad.__version__)",
+        ],
+        artifact=name,
+        step="assert mcp extra absent; import self_nomad",
+        env=env,
+    )
+    if missing.stdout.strip() != expected_version:
+        raise SmokeError(
+            f"[{name}] version after mcp-absence check {missing.stdout.strip()!r} "
+            f"!= {expected_version!r}"
+        )
+
+    mcp_cli = venv_self_nomad_mcp(venv_dir)
+    if not mcp_cli.is_file():
+        raise SmokeError(
+            f"[{name}] self-nomad-mcp entry point missing after base install: {mcp_cli}"
+        )
+
+    mcp_probe = subprocess.run(
+        [str(mcp_cli), "--repo", str(repo.resolve())],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if mcp_probe.returncode != 2:
+        raise SmokeError(
+            f"[{name}] self-nomad-mcp without mcp extra exit "
+            f"{mcp_probe.returncode}, expected 2"
+        )
+    if (mcp_probe.stdout or "").strip():
+        raise SmokeError(
+            f"[{name}] self-nomad-mcp without mcp extra wrote to stdout: "
+            f"{mcp_probe.stdout!r}"
+        )
+    stderr = mcp_probe.stderr or ""
+    has_hint = (
+        "pip install 'self-nomad[mcp]'" in stderr
+        or 'pip install "self-nomad[mcp]"' in stderr
+    )
+    if not has_hint:
+        raise SmokeError(
+            f"[{name}] self-nomad-mcp stderr missing install instruction: {stderr!r}"
+        )
 
     print(f"OK  {name}  version={expected_version}")
 
