@@ -43,3 +43,12 @@ atomically installs the staged directory, verifies live hashes, and rolls the
 original directory back on any failure. Proposal application refuses a target
 branch checked out in any worktree; users must detach or switch that checkout
 before applying, preventing ref/index/worktree divergence.
+
+
+## Agent intake
+
+Agents submit versioned `ProposalRequest` JSON through a strict loader. Preview
+evaluates policy, secrets, and hashes without durable writes. Submit stages
+inline UTF-8 content under private state, creates a normal proposal, and records
+idempotent receipts keyed by request id and canonical digest. Approval and
+application remain outside intake.

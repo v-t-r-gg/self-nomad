@@ -58,6 +58,17 @@ class Proposal(BaseModel):
     risk: Literal["low", "medium", "high", "critical"] = "medium"
 
 
+class IntakeProvenance(BaseModel):
+    """Optional link from a proposal back to an agent intake request."""
+
+    model_config = ConfigDict(extra="forbid")
+    request_id: str
+    request_digest: str
+    runtime: str | None = None
+    agent_identifier: str | None = None
+    correlation_id: str | None = None
+
+
 class ProposalRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
     proposal: Proposal
@@ -72,3 +83,5 @@ class ProposalRecord(BaseModel):
     approval_identifier: str | None = None
     rejection_reason: str | None = None
     applied_commit: str | None = None
+    # Additive optional field: pre-intake records omit it and still load.
+    intake: IntakeProvenance | None = None

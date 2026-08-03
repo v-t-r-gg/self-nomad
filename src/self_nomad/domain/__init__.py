@@ -8,6 +8,7 @@ from self_nomad.domain.adapters import (
 )
 from self_nomad.domain.proposals import (
     FileOperation,
+    IntakeProvenance,
     Proposal,
     ProposalRecord,
     ProposalStatus,
@@ -21,6 +22,7 @@ __all__ = [
     "Fidelity",
     "FileOperation",
     "Finding",
+    "IntakeProvenance",
     "Mapping",
     "Proposal",
     "ProposalRecord",

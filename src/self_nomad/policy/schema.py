@@ -13,6 +13,9 @@ class LimitsPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
     maximum_file_bytes: int = Field(default=1_048_576, gt=0)
     maximum_proposal_files: int = Field(default=100, gt=0)
+    # Agent intake envelope bound. Existing policy files omit this field and
+    # receive the default via Pydantic.
+    maximum_request_bytes: int = Field(default=4_194_304, gt=0)
 
 
 class ValidationPolicy(BaseModel):

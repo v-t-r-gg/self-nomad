@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "request_id": "agent:skill-addition:research-v1",
+  "reason": "Add a portable research skill artifact to the self repository.",
+  "source": {
+    "runtime": "generic",
+    "agent_identifier": "skill-author",
+    "correlation_id": "skill-draft-12"
+  },
+  "operations": [
+    {
+      "kind": "add",
+      "path": "skills/research/SKILL.md",
+      "content": "---\nname: research\ndescription: Structured research with cited sources.\n---\n\n# Research\n\nGather primary sources before drafting conclusions.\n"
+    }
+  ]
+}

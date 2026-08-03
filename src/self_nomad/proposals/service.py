@@ -3,12 +3,18 @@ import shutil
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from filelock import FileLock
 
-from self_nomad.domain import FileOperation, Proposal, ProposalRecord, ProposalStatus, Proposer
+from self_nomad.domain import (
+    FileOperation,
+    IntakeProvenance,
+    Proposal,
+    ProposalRecord,
+    ProposalStatus,
+    Proposer,
+)
 from self_nomad.errors import (
     ConflictError,
     ProposalStaleError,
@@ -19,6 +25,7 @@ from self_nomad.filesystem import atomic_write_bytes, atomic_write_text, contain
 from self_nomad.git import GitBackend
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
+from self_nomad.proposals.risk import classify_proposal_risk
 from self_nomad.repository import SelfRepository
 
 from .store import ProposalStore
@@ -31,26 +38,36 @@ class ProposalService:
         *,
         state_root: Path | None = None,
         git: GitBackend | None = None,
+        store: ProposalStore | None = None,
     ) -> None:
         self.repository = repository
         self.git = git or GitBackend(repository.root)
-        self.store = ProposalStore(repository.root, state_root)
+        self.store = store or ProposalStore(repository.root, state_root)
 
-    def create(
+    def create_draft(
         self,
         *,
         reason: str,
         operations: list[FileOperation],
         target_branch: str | None = None,
         proposer: Proposer | None = None,
+        source_adapter: str | None = None,
+        intake: IntakeProvenance | None = None,
+        proposal_id: UUID | None = None,
+        base_commit: str | None = None,
     ) -> ProposalRecord:
+        """Persist a draft proposal without materializing a worktree.
+
+        When ``base_commit`` is provided (intake recovery), that exact commit is
+        recorded. Otherwise the current tip of the target branch is used.
+        """
         manifest = self.repository.load_manifest()
         policy = Policy.model_validate(
             load_yaml(contained_path(self.repository.root, manifest.policy, must_exist=True))
         )
         if len(operations) > policy.limits.maximum_proposal_files:
             raise ConflictError("proposal exceeds maximum_proposal_files")
-        risk = self._classify_risk(operations)
+        risk = classify_proposal_risk(operations)
         for operation in operations:
             if operation.content_source:
                 source = Path(operation.content_source)
@@ -62,18 +79,47 @@ class ProposalService:
                     )
                 self._require_utf8_bytes(source.read_bytes(), path=operation.path)
         branch = target_branch or self.git.current_branch()
+        resolved_base = (
+            base_commit if base_commit is not None else self.git.head(f"refs/heads/{branch}")
+        )
         proposal = Proposal(
+            id=proposal_id if proposal_id is not None else uuid4(),
             repository_id=manifest.self.id,
-            base_commit=self.git.head(f"refs/heads/{branch}"),
+            base_commit=resolved_base,
             target_branch=branch,
+            source_adapter=source_adapter,
             proposer=proposer or Proposer(),
             reason=reason,
             operations=operations,
             risk=risk,
         )
-        record = ProposalRecord(proposal=proposal)
+        record = ProposalRecord(proposal=proposal, intake=intake)
         self.store.save(record)
-        return self.materialize(proposal.id)
+        return record
+
+    def create(
+        self,
+        *,
+        reason: str,
+        operations: list[FileOperation],
+        target_branch: str | None = None,
+        proposer: Proposer | None = None,
+        source_adapter: str | None = None,
+        intake: IntakeProvenance | None = None,
+        proposal_id: UUID | None = None,
+        base_commit: str | None = None,
+    ) -> ProposalRecord:
+        record = self.create_draft(
+            reason=reason,
+            operations=operations,
+            target_branch=target_branch,
+            proposer=proposer,
+            source_adapter=source_adapter,
+            intake=intake,
+            proposal_id=proposal_id,
+            base_commit=base_commit,
+        )
+        return self.materialize(record.proposal.id)
 
     @staticmethod
     def _require_utf8_bytes(content: bytes, *, path: str) -> None:
@@ -82,28 +128,8 @@ class ProposalService:
         except UnicodeDecodeError as exc:
             raise ConflictError(f"content source is not valid UTF-8: {path}") from exc
 
-    @staticmethod
-    def _classify_risk(
-        operations: list[FileOperation],
-    ) -> Literal["low", "medium", "high", "critical"]:
-        paths = [operation.path for operation in operations]
-        if any(
-            path.startswith("policy/")
-            or path == "self-nomad.yaml"
-            or Path(path).suffix in {".py", ".sh", ".js", ".exe"}
-            for path in paths
-        ):
-            return "critical"
-        if any(
-            operation.kind == "delete" or operation.path.startswith("identity/")
-            for operation in operations
-        ):
-            return "high"
-        if any(path.startswith("skills/") for path in paths):
-            return "medium"
-        return "low"
-
     def materialize(self, proposal_id: UUID) -> ProposalRecord:
+        self.store.ensure_writable()
         with FileLock(self.store.lock_path, timeout=10):
             record = self.store.load(proposal_id)
             if record.status is not ProposalStatus.DRAFT:
@@ -263,6 +289,8 @@ class ProposalService:
                     for operation in proposal.operations
                 ],
             }
+            if record.intake is not None:
+                audit["intake"] = record.intake.model_dump(mode="json")
             atomic_write_text(audit_path, json.dumps(audit, indent=2, sort_keys=True) + "\n")
             audit_relative = audit_path.relative_to(worktree).as_posix()
             final_commit = self.git.commit_paths(

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "request_id": "hermes:memory-update:2026-08-03T170200Z",
+  "reason": "Curate a durable memory fact from a Hermes session summary.",
+  "target_branch": "main",
+  "source": {
+    "runtime": "hermes",
+    "agent_identifier": "default",
+    "correlation_id": "hermes-turn-991"
+  },
+  "operations": [
+    {
+      "kind": "replace",
+      "path": "memory/MEMORY.md",
+      "content": "# Memory\n\n- Prefers structured research notes with sources.\n"
+    }
+  ]
+}

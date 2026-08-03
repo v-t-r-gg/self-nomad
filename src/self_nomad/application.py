@@ -12,6 +12,7 @@ from self_nomad.repository.layout import ARTIFACT_TEMPLATES, POLICY_TEMPLATE, ma
 
 if TYPE_CHECKING:
     from self_nomad.domain import ProposalRecord, TransferPlan
+    from self_nomad.intake import IntakeService
     from self_nomad.proposals import ProposalService
 
 
@@ -28,6 +29,11 @@ class SelfNomad:
 
         return ProposalService(self.repository, state_root=state_root)
 
+    def intake(self, *, state_root: Path | None = None) -> "IntakeService":
+        from self_nomad.intake import IntakeService
+
+        return IntakeService(self.repository, state_root=state_root)
+
     def create_import_proposal(
         self,
         plan: "TransferPlan",
@@ -39,6 +45,7 @@ class SelfNomad:
         from self_nomad.domain import FileOperation
 
         service = self.proposals(state_root=state_root)
+        service.store.ensure_writable()
         staging = Path(tempfile.mkdtemp(prefix="import-", dir=service.store.root))
         default_registry().get(plan.adapter).materialize_import(plan, staging)
         operations: list[FileOperation] = []

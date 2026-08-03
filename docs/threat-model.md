@@ -16,7 +16,12 @@ replacement. Replaced runtime files are copied to restrictive local state
 before writes. Import staging is converted into typed, hash-bound proposal
 operations rather than modifying the active checkout.
 
-Managed Git commands override `core.hooksPath` with `/dev/null`; repository and
+Agent intake accepts only strict JSON with inline UTF-8 content. Caller
+filesystem content paths, credentials, session data, and automatic approval are
+outside the intake contract. High-confidence secret patterns are rejected during
+preview/submit before proposal creation.
+
+Managed Git commands override `core.hooksPath` with a platform null device; repository and
 global hooks therefore do not execute. Git clean/smudge/process filters remain
 part of the user's trusted Git configuration. A repository using filters must
 trust those filters to transform worktree bytes; proposal approval binds the

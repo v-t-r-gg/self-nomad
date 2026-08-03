@@ -1,0 +1,277 @@
+{
+  "$defs": {
+    "AddOperation": {
+      "additionalProperties": false,
+      "description": "Add a new regular file that must not already exist on the target branch.",
+      "properties": {
+        "content": {
+          "description": "Inline UTF-8 file content. Tab, LF, and CR are allowed.",
+          "title": "Content",
+          "type": "string"
+        },
+        "expected_after_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional SHA-256 of the UTF-8 content bytes.",
+          "title": "Expected After Sha256"
+        },
+        "kind": {
+          "const": "add",
+          "description": "Create a new file at path.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "description": "Repository-relative POSIX path for a portable artifact.",
+          "maxLength": 1024,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "content"
+      ],
+      "title": "AddOperation",
+      "type": "object"
+    },
+    "DeleteOperation": {
+      "additionalProperties": false,
+      "description": "Delete an existing regular file blob on the target branch.",
+      "properties": {
+        "expected_before_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional SHA-256 of the current target-branch blob.",
+          "title": "Expected Before Sha256"
+        },
+        "kind": {
+          "const": "delete",
+          "description": "Delete an existing file at path.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "description": "Repository-relative POSIX path for a portable artifact.",
+          "maxLength": 1024,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind"
+      ],
+      "title": "DeleteOperation",
+      "type": "object"
+    },
+    "IntakeSource": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_identifier": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional agent instance identifier within the runtime.",
+          "title": "Agent Identifier"
+        },
+        "correlation_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional caller correlation token for tracing.",
+          "title": "Correlation Id"
+        },
+        "runtime": {
+          "description": "Runtime or integration name that produced the request.",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Runtime",
+          "type": "string"
+        }
+      },
+      "required": [
+        "runtime"
+      ],
+      "title": "IntakeSource",
+      "type": "object"
+    },
+    "ReplaceOperation": {
+      "additionalProperties": false,
+      "description": "Replace an existing regular file blob on the target branch.",
+      "properties": {
+        "content": {
+          "description": "Inline UTF-8 file content. Tab, LF, and CR are allowed.",
+          "title": "Content",
+          "type": "string"
+        },
+        "expected_after_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional SHA-256 of the UTF-8 content bytes.",
+          "title": "Expected After Sha256"
+        },
+        "expected_before_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional SHA-256 of the current target-branch blob.",
+          "title": "Expected Before Sha256"
+        },
+        "kind": {
+          "const": "replace",
+          "description": "Replace an existing file at path.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "description": "Repository-relative POSIX path for a portable artifact.",
+          "maxLength": 1024,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "content"
+      ],
+      "title": "ReplaceOperation",
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/v-t-r-gg/self-nomad/schemas/proposal-request-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Framework-neutral agent intake request for proposing changes to a portable self repository. Inline content is UTF-8 text only; filesystem content_source paths are not accepted.",
+  "properties": {
+    "operations": {
+      "description": "Ordered portable file operations. Paths must be unique.",
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "add": "#/$defs/AddOperation",
+            "delete": "#/$defs/DeleteOperation",
+            "replace": "#/$defs/ReplaceOperation"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/AddOperation"
+          },
+          {
+            "$ref": "#/$defs/ReplaceOperation"
+          },
+          {
+            "$ref": "#/$defs/DeleteOperation"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Operations",
+      "type": "array"
+    },
+    "reason": {
+      "description": "Human-readable rationale for the proposed change.",
+      "maxLength": 4096,
+      "minLength": 1,
+      "title": "Reason",
+      "type": "string"
+    },
+    "request_id": {
+      "description": "Caller-chosen durable idempotency key. Machine-safe characters only; retries with the same id and payload reuse one proposal.",
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+=@/-]{0,255}$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "description": "Intake request schema version. Only 1 is supported.",
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/IntakeSource",
+      "description": "Provenance of the requesting agent or tool."
+    },
+    "target_branch": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional Git branch to target; defaults to the current branch.",
+      "title": "Target Branch"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "reason",
+    "source",
+    "operations"
+  ],
+  "title": "self-nomad ProposalRequest v1",
+  "type": "object"
+}
