@@ -27,9 +27,11 @@ class GitBackend:
                 "LC_ALL": "C",
             }
         )
+        # Disable hooks without relying on a POSIX-only path string.
+        hooks_path = "NUL" if os.name == "nt" else "/dev/null"
         try:
             completed = subprocess.run(
-                ["git", "-c", "core.hooksPath=/dev/null", *arguments],
+                ["git", "-c", f"core.hooksPath={hooks_path}", *arguments],
                 cwd=cwd or self.root,
                 env=environment,
                 check=False,
