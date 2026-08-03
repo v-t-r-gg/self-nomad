@@ -1,46 +1,70 @@
 # Threat model
 
-The protected assets are the user's durable agent content, credentials,
-private operational state, repository history, and runtime targets. Inputs
-from agents, manifests, repositories, runtimes, and Git remotes are untrusted.
+## Protected assets
 
-The deterministic core prevents path traversal, rejects escaping symlinks,
-loads YAML safely, limits content through policy, writes files atomically, and
-does not execute repository-provided code. Credentials and session databases
-are outside the product boundary.
+- Durable agent content (identity, memory, skills)
+- Repository history and proposal audit records
+- Runtime targets during restore
+- Private operational state (receipts, worktrees) on the operator machine
+- Credentials and sessions (by **exclusion** from the product boundary)
 
-Runtime adapters accept only explicit runtime roots, reject symlinked artifact
-sources and targets, never inspect known credential/session stores as portable
-content, and verify targets against the read-only plan immediately before
-replacement. Replaced runtime files are copied to restrictive local state
-before writes. Import staging is converted into typed, hash-bound proposal
-operations rather than modifying the active checkout.
+## Trust boundaries
 
-Agent intake accepts only strict JSON with inline UTF-8 content. Caller
-filesystem content paths, credentials, session data, and automatic approval are
-outside the intake contract. High-confidence secret patterns are rejected during
-preview/submit before proposal creation.
+| Trusted | Untrusted |
+| --- | --- |
+| Operator who runs CLI / configures MCP | Agent-submitted intake JSON |
+| Local Git binary and configured filters | Repository content as data |
+| Host that spawns `self-nomad-mcp` | MCP tool arguments |
+| Explicit runtime roots for adapters | Runtime trees as untrusted files |
 
-The optional MCP server inherits the intake trust model and adds a local
-process boundary: no authentication in stdio mode (the operator who configures
-the host and `--repo` is trusted), fixed repository root for the process
-lifetime, closed tool allow-list (no approve/apply/import/restore), sanitized
-proposal payloads without inline content or staging paths, fixed public error
-messages that never echo Git stderr or exception text, recognized-tool
-argument failures returned as envelopes rather than raw SDK validation
-output, and stderr-only diagnostics so protocol framing on stdout cannot leak
-stack traces. Host tool filters are complementary; the server allow-list is
-authoritative.
+## Attacker-controlled inputs
 
-Managed Git commands override `core.hooksPath` with a platform null device; repository and
-global hooks therefore do not execute. Git clean/smudge/process filters remain
-part of the user's trusted Git configuration. A repository using filters must
-trust those filters to transform worktree bytes; proposal approval binds the
-resulting complete Git tree and exact declared diff, not the filter program.
+Manifest paths, repository files, intake requests, adapter runtime trees, and
+MCP tool payloads.
 
-Git is an audit log, not a security boundary. Git history retains deleted
-content. Structural validation cannot establish that an instruction is safe or
-behaviorally beneficial. These are residual risks requiring review and careful
-repository access control. Residual MCP risks include a compromised host
-process spawning `self-nomad-mcp` against an unintended repository path, and
-agents that can already write arbitrary files outside this server.
+## Enforced invariants
+
+- Path traversal and escaping symlink rejection
+- Safe YAML load
+- Policy size limits
+- Atomic file writes
+- No execution of repository-provided tests/scripts as product behavior
+- Managed Git: hooks disabled (`core.hooksPath` null device), no prompts
+- Proposal validation binds complete tree + declared diff
+- Apply refuses checked-out target branches
+- Restore: stage, verify, backup, swap, verify, rollback
+
+## Proposal and approval guarantees
+
+Approval records an identifier without authenticating the human. Tree binding
+and stale detection still apply. MCP never exposes approve/apply.
+
+## Intake and MCP boundaries
+
+- Inline UTF-8 only; no caller content paths
+- Fixed public error messages (no Git stderr or path leaks in MCP envelopes)
+- Seven native tools only; fixed absolute `--repo`
+- Structured next actions never imply MCP can approve/apply
+
+## Adapter exclusions
+
+Credentials, sessions, databases, Hermes `.env` / `state.db`, OpenClaw state
+directory, and runtime-owned bootstrap files are excluded from portability.
+
+## Trusted Git filters
+
+Clean/smudge/process filters are trusted local infrastructure. Approval binds
+resulting tree bytes, not the filter program.
+
+## Residual risks
+
+- Git history retains deleted content
+- Structural validation is not behavioral safety of agent instructions
+- Secret scanning is not general DLP
+- Compromised host can point MCP at any local path the operator allows
+- Agents with shell outside MCP can bypass the MCP surface
+
+## Explicit product exclusions
+
+No LLM calls, no remote push from apply, no credential vaults, no automatic
+approval, no remote MCP transports in the current slice.

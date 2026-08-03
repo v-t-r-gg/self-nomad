@@ -32,6 +32,8 @@ jobs:
         run: uv run mypy
       - name: ProposalRequest JSON Schema consistency
         run: uv run python scripts/export_proposal_request_schema.py --check
+      - name: Documentation consistency
+        run: uv run python scripts/check_docs.py
       - name: Base install without MCP extra
         run: |
           uv run python - <<'PY'

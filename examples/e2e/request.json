@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "request_id": "docs:e2e:memory:1",
+  "reason": "Record a documentation preference via intake.",
+  "source": {
+    "runtime": "openclaw",
+    "agent_identifier": "docs-demo",
+    "correlation_id": "e2e-walkthrough"
+  },
+  "operations": [
+    {
+      "kind": "replace",
+      "path": "memory/MEMORY.md",
+      "content": "# Memory\n\n- Prefers concise operator documentation.\n"
+    }
+  ]
+}

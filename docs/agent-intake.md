@@ -108,15 +108,35 @@ Stable intake codes include `INTAKE_REQUEST_TOO_LARGE`, `INTAKE_INVALID_UTF8`,
 `INTAKE_SCHEMA_INVALID`, `INTAKE_CONTENT_TOO_LARGE`, `INTAKE_CONTENT_UNSAFE`,
 `INTAKE_ID_CONFLICT`, `INTAKE_POLICY_REJECTED`, and `INTAKE_SUBMISSION_FAILED`.
 
-## Idempotency
+## Idempotency and receipts
 
 - Same `request_id` + same canonical digest → return existing proposal (`reused: true`).
 - Same `request_id` + different digest → `INTAKE_ID_CONFLICT`.
 - Concurrent identical submissions create one proposal.
-- Receipts are durable under private repository state; recovery does not rely on process memory.
+- Receipts are durable under private platform state; recovery does not rely on process memory.
 
 Canonical digests hash the validated semantic model with sorted keys, compact
 JSON separators, and UTF-8 encoding. self-nomad timestamps are outside the digest.
+
+### Receipt lifecycle
+
+| Receipt concern | Behavior |
+| --- | --- |
+| Reserved proposal ID | Preallocated before creation so retries never mint a second UUID |
+| Frozen target branch / base commit | Bound when the receipt is first written |
+| Digest conflict | `INTAKE_ID_CONFLICT` when payload changes under the same id |
+| Target movement | `INTAKE_TARGET_MOVED` when the frozen base no longer matches the tip |
+| Pending / crash recovery | Incomplete materialization resumes from the receipt |
+| Completed reuse | Returns the same proposal id with `reused: true` |
+| Zero-write preview | Does not create receipts, proposals, or worktrees |
+| Target-commit preflight | Uses the **resolved target commit**, not merely the dirty worktree |
+
+### Structured MCP next actions
+
+When results are returned through MCP, `suggested_next` is rewritten to
+structured objects (`channel` + `tool` or `command`). Eligible previews point
+at `self_nomad_intake_submit`. Approve/apply appear only as CLI operator steps.
+Core Python/CLI models may still expose list-of-string next actions.
 
 ## Provenance
 

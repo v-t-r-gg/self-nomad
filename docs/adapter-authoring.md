@@ -24,4 +24,28 @@ prove those values never reach canonical staging.
 
 Current contracts are based on the official [Hermes memory and profile
 documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory/)
-and [OpenClaw workspace documentation](https://docs.openclaw.ai/agent-workspace).
+and [OpenClaw workspace documentation](https://docs.openclaw.ai/agent-workspace)
+(verify mappings before each release; host layouts may change).
+
+## Implementation checklist
+
+1. **Subclass `RuntimeAdapter`** with a unique `name`.
+2. **Detect** zero or more roots; never invent paths.
+3. **Plan import/restore** with explicit `Mapping` fidelity and exclusions for
+   every known artifact class (no silent drops).
+4. **Never map** credentials, sessions, DBs, caches, or secret files to
+   canonical content.
+5. **Validate** runtime constraints without mutating.
+6. **Restore** only through the transactional helper path (stage → verify →
+   backup → swap → verify → rollback).
+7. **Register** the adapter in the default registry.
+8. **Fixtures** under `tests/fixtures/<adapter>/` with positive and negative
+   cases (inclusions + exclusions).
+9. **Tests** for conflict, backup recovery, and fidelity reporting.
+10. **Document** operator mappings in [runtime-portability.md](runtime-portability.md).
+
+## Related
+
+- [Runtime portability](runtime-portability.md)
+- [Architecture](architecture.md)
+- [Threat model](threat-model.md)

@@ -10,19 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Agent-facing proposal intake: strict `ProposalRequest` v1, preview/submit
-  service, CLI `intake`, JSON Schema, and idempotent request receipts.
-- Examples and documentation for Hermes/OpenClaw-style memory and skill updates.
+  service, CLI `intake`, JSON Schema, and frozen-base idempotent receipts with
+  crash recovery and target-commit preflight.
 - Policy limit `limits.maximum_request_bytes` (default 4 MiB).
 - Optional bounded local MCP server (`self-nomad-mcp`) behind
-  `self-nomad[mcp]` (official Python MCP SDK v2): repository status/validate,
-  intake preview/submit, proposal list/get/validate, and the packaged
-  ProposalRequest schema resource. OpenClaw and Hermes configuration examples
-  under `examples/mcp/`; docs in `docs/mcp.md` and ADR 0006.
-- Installed-artifact MCP smoke harness (`scripts/mcp_smoke.py`).
+  `self-nomad[mcp]` (official Python MCP SDK v2): seven native tools
+  (repository status/validate, intake preview/submit, proposal list/get/validate),
+  packaged ProposalRequest schema resource, OpenClaw/Hermes host examples,
+  structured capability-aware next actions, and installed-artifact MCP smoke
+  (`scripts/mcp_smoke.py`).
+- Documentation overhaul: docs index, getting started, CLI reference, Python
+  API, runtime portability, troubleshooting, upgrading, documentation checker
+  (`scripts/check_docs.py`), and end-to-end intake example.
 
 ### Changed
 
+- Base release smoke asserts the MCP extra is absent and `self-nomad-mcp`
+  prints a concise install instruction.
+- Releasing documentation is version-agnostic (derives version from
+  `pyproject.toml` / artifacts).
+
 ### Fixed
+
+- MCP error paths no longer reflect caller-controlled property names; residual
+  SDK tool errors map to internal envelopes after argument validation.
 
 ### Security
 
@@ -30,12 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content/provenance, and caller-supplied content paths.
 - MCP surface is a closed allow-list (no approve/apply/import/restore tools),
   requires a fixed absolute `--repo`, keeps protocol traffic on stdout and
-  diagnostics on stderr, and redacts staging paths and inline content from
-  tool results.
-- MCP tool results use fixed public error messages (no raw Git stderr,
-  staging paths, or exception `repr`); recognized-tool argument failures
-  return envelopes instead of SDK validation text that could echo input
-  values.
+  diagnostics on stderr, redacts staging paths and inline content, and uses
+  fixed public error messages (no raw Git stderr or exception `repr`).
 
 ## [0.1.0rc1] - 2026-08-03
 

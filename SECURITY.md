@@ -20,3 +20,6 @@ The optional local MCP server (`self-nomad-mcp`) does not authenticate stdio
 clients. Only expose it on hosts and operator accounts you already trust with
 the managed repository. It never provides approve/apply tools; do not grant
 agents a separate shell that bypasses that boundary.
+
+See [docs/threat-model.md](docs/threat-model.md) for the full operator-facing
+security model.
