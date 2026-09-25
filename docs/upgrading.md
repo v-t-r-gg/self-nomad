@@ -1,9 +1,10 @@
 # Upgrading
 
-Guidance for moving to **1.4.0** (unreleased on `main`). It keeps schema 1,
-the 1.0 JSON and MCP contracts, the 1.1 pack format, and the 1.2 TUI.
-`v1.3.0` is the tagged workspace-adapter release. Historical notes remain in
+Guidance for moving to **1.4.0**. It keeps schema 1, the 1.0 JSON and MCP
+contracts, the 1.1 pack format, and the 1.2 TUI. `v1.3.0` remains the
+workspace-adapter tag. Historical notes remain in
 [CHANGELOG.md](../CHANGELOG.md). Release notes:
+[releases/1.4.0.md](releases/1.4.0.md),
 [releases/1.3.0.md](releases/1.3.0.md),
 [releases/1.2.0.md](releases/1.2.0.md),
 [releases/1.1.1.md](releases/1.1.1.md),
@@ -14,7 +15,7 @@ the 1.0 JSON and MCP contracts, the 1.1 pack format, and the 1.2 TUI.
 
 | Item | Value |
 | --- | --- |
-| Package version | `1.4.0` (from `pyproject.toml`, not tagged yet) |
+| Package version | `1.4.0` (from `pyproject.toml`) |
 | Repository `schema_version` | **1** (unchanged) |
 | Pack format | `self-nomad-pack-v1` |
 | Source-tree version sentinel | `0+unknown` when not installed |

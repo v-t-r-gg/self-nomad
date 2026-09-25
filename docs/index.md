@@ -37,6 +37,7 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | [Adapter authoring](adapter-authoring.md) | Implementing another runtime adapter |
 | [Contributing](../CONTRIBUTING.md) | Local verification and PR expectations |
 | [Releasing](releasing.md) | Version-agnostic release procedure |
+| [1.4.0 notes](releases/1.4.0.md) | GUI, hub file-drop, thin wrappers |
 | [1.3.0 notes](releases/1.3.0.md) | Workspace adapters |
 | [1.2.0 notes](releases/1.2.0.md) | Interactive TUI |
 | [1.1.1 notes](releases/1.1.1.md) | Sidecar identity check |

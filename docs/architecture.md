@@ -1,6 +1,6 @@
 # Architecture
 
-Current system architecture for self-nomad `1.4.0` (schema version 1, unreleased).
+Current system architecture for self-nomad `1.4.0` (schema version 1).
 
 ## Layers
 
