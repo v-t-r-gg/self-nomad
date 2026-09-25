@@ -82,6 +82,7 @@ not validate the tree or the digest. Use `--check` before trusting an archive.
 - a file over policy `maximum_file_bytes`
 - a specialist archive that still contains `identity/user.md`, `memory/MEMORY.md`, or `memory/daily/*`
 - a digest that does not match the archived tree (including after a bit flip)
+- a sidecar whose `self.id`, `self.name`, `self.description`, or skill names do not match the archived manifest and skill tree (those fields are recomputed; the digest does not cover the sidecar)
 - `install` into a destination that already has files
 
 Secret scanning remains high-confidence only. It is not general data-loss prevention.

@@ -25,6 +25,7 @@ tools are unchanged.
 ### Security
 
 - `pack --check` and `install` fail closed on path escape, planted `.git`, symlinks, secret hits, policy oversize, digest mismatch, and a specialist archive that still contains `identity/user.md` or `memory/daily/*`.
+- `pack --check` and `install` recompute `self.id`, `self.name`, `self.description`, and skill names from the archived tree and reject a sidecar that disagrees. The content digest does not cover the sidecar, so a rewritten sidecar is not accepted.
 
 ## [1.0.0] - 2026-08-17
 

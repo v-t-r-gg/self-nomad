@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tarfile
 from pathlib import Path
 
@@ -229,6 +230,33 @@ def test_same_tree_same_digest_and_lf_normalization(tmp_path: Path) -> None:
     stored = (staging / "identity" / "persona.md").read_bytes()
     assert b"\r" not in stored
     assert stored == b"# Persona\n\nSame body.\n"
+
+
+def test_check_rejects_forged_sidecar_identity_and_skills(tmp_path: Path) -> None:
+    archive = _pack(tmp_path)
+    honest = SelfNomad.check_pack(archive)
+    staging = tmp_path / "unpacked"
+    staging.mkdir()
+    _extract(archive, staging)
+    sidecar_path = staging / PACK_SIDECAR
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    sidecar["skills"] = ["not-the-real-skill"]
+    sidecar["self"]["name"] = "forged-name"
+    sidecar["self"]["id"] = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee1"
+    assert sidecar["content_digest"] == honest.content_digest
+    sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+    forged = tmp_path / "forged.snpack"
+    with tarfile.open(forged, "w:gz") as handle:
+        for path in sorted(staging.rglob("*")):
+            if path.is_file():
+                handle.add(path, arcname=path.relative_to(staging).as_posix())
+    with pytest.raises(PackError, match="does not match"):
+        SelfNomad.check_pack(forged)
+    with pytest.raises(PackError, match="does not match"):
+        SelfNomad.install_pack(forged, tmp_path / "out")
+    assert SelfNomad.check_pack(archive).content_digest == honest.content_digest
+    assert SelfNomad.check_pack(archive).skills == ["research"]
+    assert SelfNomad.check_pack(archive).self.name == "packer"
 
 
 def _names(archive: Path) -> set[str]:

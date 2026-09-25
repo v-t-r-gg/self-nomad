@@ -112,6 +112,7 @@ def _opened_pack(archive: Path) -> Iterator[tuple[Path, PackSummary]]:
             )
         if validation.content_digest != summary.content_digest:
             raise PackError("pack content_digest does not match the archived tree")
+        _assert_sidecar_matches_tree(staging, summary)
         yield staging, summary
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -319,6 +320,21 @@ def _packer_version() -> str:
     from self_nomad import __version__
 
     return __version__
+
+
+def _assert_sidecar_matches_tree(staging: Path, summary: PackSummary) -> None:
+    """Index fields must be recomputed from the tree. The sidecar is not trusted."""
+    manifest = SelfRepository(staging).load_manifest()
+    identity = manifest.self
+    if summary.self.id != identity.id:
+        raise PackError("pack sidecar self.id does not match the archived manifest")
+    if summary.self.name != identity.name:
+        raise PackError("pack sidecar self.name does not match the archived manifest")
+    if summary.self.description != identity.description:
+        raise PackError("pack sidecar self.description does not match the archived manifest")
+    actual_skills = _skill_names(staging, manifest.content.skills)
+    if list(summary.skills) != actual_skills:
+        raise PackError("pack sidecar skills do not match the archived tree")
 
 
 def _skill_names(root: Path, skills_relative: str | None) -> list[str]:
