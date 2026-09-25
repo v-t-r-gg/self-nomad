@@ -47,6 +47,12 @@ from self_nomad.render import (
     render_validation,
 )
 from self_nomad.review_ui import review_record, run_interactive_review
+from self_nomad.tui.launch import (
+    MISSING_TUI_MESSAGE,
+    is_missing_textual,
+    launch_tui,
+    textual_available,
+)
 
 
 class BrandedGroup(TyperGroup):
@@ -56,7 +62,8 @@ class BrandedGroup(TyperGroup):
 
 
 app = typer.Typer(
-    no_args_is_help=True,
+    no_args_is_help=False,
+    invoke_without_command=True,
     pretty_exceptions_enable=False,
     cls=BrandedGroup,
     rich_markup_mode="rich",
@@ -111,8 +118,9 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def callback(
+    ctx: typer.Context,
     repo: Annotated[Path | None, typer.Option("--repo")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
     version: Annotated[
@@ -122,6 +130,29 @@ def callback(
     """Manage a portable agent self repository."""
     state.repo = repo
     state.json_output = json_output
+    if ctx.invoked_subcommand is not None:
+        return
+    if (
+        not json_output
+        and sys.stdout.isatty()
+        and textual_available()
+    ):
+        launch_tui(repo or Path.cwd())
+        raise typer.Exit()
+    typer.echo(ctx.get_help())
+    raise typer.Exit()
+
+
+@app.command()
+def tui() -> None:
+    """Open the keyboard-first operator TUI (optional self-nomad[tui] extra)."""
+    repo = state.repo or Path.cwd()
+    try:
+        launch_tui(repo)
+    except ModuleNotFoundError as exc:
+        if is_missing_textual(exc):
+            fail("tui", ConflictError(MISSING_TUI_MESSAGE))
+        raise
 
 
 @app.command()

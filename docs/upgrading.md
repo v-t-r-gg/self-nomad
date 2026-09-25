@@ -1,8 +1,9 @@
 # Upgrading
 
-Guidance for moving to **1.1.1**. 1.1.1 keeps schema 1 and the 1.0 JSON and
-MCP contracts. Historical notes remain in
+Guidance for moving to **1.2.0**. 1.2.0 keeps schema 1, the 1.0 JSON and
+MCP contracts, and the 1.1 pack format. Historical notes remain in
 [CHANGELOG.md](../CHANGELOG.md). Release notes:
+[releases/1.2.0.md](releases/1.2.0.md),
 [releases/1.1.1.md](releases/1.1.1.md),
 [releases/1.1.0.md](releases/1.1.0.md), and
 [releases/1.0.0.md](releases/1.0.0.md).
@@ -11,7 +12,7 @@ MCP contracts. Historical notes remain in
 
 | Item | Value |
 | --- | --- |
-| Package version | `1.1.1` (from `pyproject.toml`) |
+| Package version | `1.2.0` (from `pyproject.toml`) |
 | Repository `schema_version` | **1** (unchanged) |
 | Pack format | `self-nomad-pack-v1` |
 | Source-tree version sentinel | `0+unknown` when not installed |

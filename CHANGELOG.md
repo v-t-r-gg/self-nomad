@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-25
+
+### Added
+
+- Optional `self-nomad[tui]` extra: `self-nomad tui` is a keyboard-first operator loop (detect, import preview, review, apply, pack, check, install, restore) over the existing services. The core wheel does not depend on Textual. `--json` never opens the TUI. Review does not apply. No hub client.
+
 ## [1.1.1] - 2026-09-25
 
 Patch on the 1.1.0 pack contract. Tag `v1.1.0` is unchanged.
@@ -178,7 +184,8 @@ First public release candidate of the safety-hardened deterministic core.
   the displayed class of mutation only.
 - Compact local-state layout is not migrated from pre-RC development checkouts.
 
-[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.2.0
 [1.1.1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.1.1
 [1.1.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.1.0
 [1.0.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.0.0

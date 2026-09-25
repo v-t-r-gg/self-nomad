@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "self-nomad"
-version = "1.1.1"
+version = "1.2.0"
 description = "Git-backed portability and change governance for persistent AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -58,6 +58,9 @@ self-nomad-mcp = "self_nomad.mcp_server.main:main"
 mcp = [
   "mcp>=2,<3",
 ]
+tui = [
+  "textual>=2,<5",
+]
 dev = [
   "build>=1.2",
   "jsonschema>=4.26.0",
@@ -67,6 +70,7 @@ dev = [
   "pytest-cov>=6.0",
   "pytest-asyncio>=0.24",
   "ruff>=0.9",
+  "textual>=2,<5",
   "types-PyYAML>=6.0.12",
 ]
 
@@ -80,6 +84,7 @@ dev = [
   "pytest-cov>=6.0",
   "pytest-asyncio>=0.24",
   "ruff>=0.9",
+  "textual>=2,<5",
   "types-PyYAML>=6.0.12",
 ]
 
@@ -120,6 +125,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.11"
 strict = true
 packages = ["self_nomad"]
+
+[[tool.mypy.overrides]]
+module = ["textual", "textual.*"]
+ignore_missing_imports = true
 
 # Coverage floor rationale (measured 2026-08-03 after in-process Typer CLI
 # tests covering init/validate/propose/approve/apply/reject/adapters/status

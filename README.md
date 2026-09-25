@@ -23,7 +23,7 @@ branch advancement under operator control.
 
 ## Development status
 
-**Version `1.1.1`**. Schema 1 and the 1.0 contracts stay frozen. The deterministic core supports:
+**Version `1.2.0`**. Schema 1 and the 1.0 contracts stay frozen. The deterministic core supports:
 
 - Repository init and structural validation
 - Isolated Git proposals (materialize → validate → approve → apply)
@@ -51,6 +51,7 @@ macOS and Windows (3.13).
 | Pack / check / install snapshot | yes | yes | no |
 | List proposals / applied log | yes | yes | no |
 | Approve and apply | yes | yes | no |
+| Interactive TUI | `self-nomad[tui]` | yes | no |
 
 ## Installation
 

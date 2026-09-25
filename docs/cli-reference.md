@@ -34,6 +34,26 @@ self-nomad about
 
 ---
 
+### `self-nomad tui`
+
+| | |
+| --- | --- |
+| Purpose | Full-screen keyboard operator loop over the same services as the CLI |
+| Mutation | Only after a preview: import creates a proposal, review approves or rejects, apply and restore and install write |
+| Arguments | Global `--repo`. Requires the optional `self-nomad[tui]` extra |
+| JSON | No. `--json` never opens the TUI |
+
+Keys: F1 home, F2 detect, F3 import, F4 review, F5 apply, F6 pack, F7 check/install, F8 restore. Review never applies. Apply still refuses a dirty worktree.
+
+```bash
+pip install 'self-nomad[tui]'
+self-nomad tui --repo ./agent
+```
+
+Without the extra, `self-nomad tui` exits with an install hint and does not open a screen.
+
+---
+
 ### `self-nomad pack`
 
 | | |

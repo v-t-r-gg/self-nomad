@@ -35,6 +35,8 @@ boundary:
 The unit of exchange is the snapshot. Proposal receipts and working Git
 history are not package contents. self-nomad does not host, search, publish,
 or authenticate to that index. Those commands, if built, live in the registry.
+The optional `self-nomad tui` screen is a local skin on the same commands,
+not a registry client.
 
 Product boundary: [ADR 0007](decisions/0007-publishable-package-profile.md).
 Concept notes (not this product): [docs/future/](future/).
