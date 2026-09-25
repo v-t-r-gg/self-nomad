@@ -73,6 +73,7 @@ async def test_detect_lists_registered_adapters(
     assert "hermes:" in body
     assert "openclaw:" in body
     assert "agents-md:" in body
+    assert "claude-code:" in body
 
 
 async def test_import_review_approve_apply_on_clean_main(

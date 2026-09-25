@@ -9,9 +9,10 @@ adapter.
 
 Hermes and OpenClaw layouts were verified against the self-nomad adapters as of
 **2026-08-17**. Host conventions can change; re-check official docs before
-production migrations. `agents-md` follows the AGENTS.md workspace convention.
-Claude Code 2.1.277 (2026-09-18) reads `AGENTS.md` when `CLAUDE.md` is absent;
-that precedence is not implemented by `agents-md`.
+production migrations. `agents-md` follows the AGENTS.md workspace convention. `claude-code` matches
+Claude Code 2.1.277 (2026-09-18): `CLAUDE.md` wins when both files exist, and
+`AGENTS.md` is the fallback only when `CLAUDE.md` is absent. The files are
+not merged.
 
 ## Shared behavior
 
@@ -85,6 +86,26 @@ byte-identical copy of a runtime instruction format.
 ```bash
 self-nomad --repo ./agent detect --adapter agents-md --path ./workspace
 self-nomad --repo ./agent import --adapter agents-md --from ./workspace
+```
+
+## claude-code
+
+**Detection:** `--path` / `--from` directory with `CLAUDE.md`, `AGENTS.md`, or
+`.claude/`. No home-directory walk.
+
+**Instructions:** `CLAUDE.md` when it exists, otherwise `AGENTS.md`. Both are
+adapted mappings of `identity/instructions.md`. If both files exist,
+`AGENTS.md` is listed on the plan and is not merged. If only `.claude/`
+exists, the directory is still a candidate and the plan reports that there is
+no instruction file.
+
+Restore writes `CLAUDE.md`. `.claude/` settings, session transcripts, and
+unclassified memory dumps stay excluded, as do `.env` and the other
+`agents-md` sensitive paths.
+
+```bash
+self-nomad --repo ./agent detect --adapter claude-code --path ./workspace
+self-nomad --repo ./agent import --adapter claude-code --from ./workspace
 ```
 
 ## Hermes

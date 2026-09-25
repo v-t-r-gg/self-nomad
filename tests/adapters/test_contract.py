@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from self_nomad.adapters import AgentsMdAdapter, HermesAdapter, OpenClawAdapter, default_registry
+from self_nomad.adapters import (
+    AgentsMdAdapter,
+    ClaudeCodeAdapter,
+    HermesAdapter,
+    OpenClawAdapter,
+    default_registry,
+)
 from self_nomad.adapters.example import ExampleFilesAdapter
 from self_nomad.application import SelfNomad
 from self_nomad.domain import Fidelity, RuntimeRef
@@ -26,11 +32,14 @@ def _repo(tmp_path: Path) -> SelfNomad:
         (OpenClawAdapter(), "openclaw/minimal", (b"BOOTSTRAP",)),
         (ExampleFilesAdapter(), "example-files/minimal", (b"SECRET_SENTINEL",)),
         (AgentsMdAdapter(), "agents_md/with_env", (b"SECRET_SENTINEL",)),
+        (ClaudeCodeAdapter(), "claude_code/both", (b"SECRET_SENTINEL", b"DO_NOT_MERGE")),
     ],
 )
 def test_adapter_contract_import_excludes_sensitive(
     tmp_path: Path,
-    adapter: HermesAdapter | OpenClawAdapter | ExampleFilesAdapter | AgentsMdAdapter,
+    adapter: (
+        HermesAdapter | OpenClawAdapter | ExampleFilesAdapter | AgentsMdAdapter | ClaudeCodeAdapter
+    ),
     fixture_relative: str,
     forbidden: tuple[bytes, ...],
 ) -> None:
@@ -69,7 +78,7 @@ def test_adapter_contract_import_excludes_sensitive(
 
 def test_example_files_not_in_default_registry() -> None:
     assert "example-files" not in default_registry().names()
-    assert {"hermes", "openclaw", "agents-md"} <= set(default_registry().names())
+    assert {"hermes", "openclaw", "agents-md", "claude-code"} <= set(default_registry().names())
 
 
 def test_hermes_and_openclaw_report_unmapped_classes(tmp_path: Path) -> None:

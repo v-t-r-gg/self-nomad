@@ -10,7 +10,7 @@ Use the **kit** in `self_nomad.adapters.kit` (`has_portable_content`,
 runtime is a recipe, not a rewrite. Copy `self_nomad.adapters.example`
 (`ExampleFilesAdapter`, name `example-files`) as a starting module. It is
 **not** in `default_registry()`. Registered adapters are `hermes`, `openclaw`,
-and `agents-md`.
+`agents-md`, and `claude-code`.
 
 Mappings use one of `exact`, `adapted`, `lossy`, `unsupported`,
 `runtime_owned`, or `excluded_sensitive`. Never silently omit an artifact —

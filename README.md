@@ -29,7 +29,7 @@ branch advancement under operator control.
 - Isolated Git proposals (materialize → validate → approve → apply)
 - Agent intake (`ProposalRequest` v1) with idempotent receipts
 - Optional local stdio **MCP** surface for inspection and intake (no approve/apply)
-- Hermes, OpenClaw, and `agents-md` adapters (detect / import / restore), plus an
+- Hermes, OpenClaw, `agents-md`, and `claude-code` adapters (detect / import / restore), plus an
   unregistered authoring-kit sample (`example-files`)
 
 Supported Python: **3.11, 3.12, 3.13**. CI exercises Ubuntu (3.11–3.13) plus

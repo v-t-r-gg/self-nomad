@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `agents-md` workspace adapter. `AGENTS.md` maps to instructions as adapted. `.env` and vendor state directories stay excluded. A README-only tree is not a candidate.
+- `claude-code` adapter. `CLAUDE.md` wins over `AGENTS.md`. The files are not merged. `AGENTS.md` is the fallback only when `CLAUDE.md` is absent.
 
 ## [1.2.0] - 2026-09-25
 
