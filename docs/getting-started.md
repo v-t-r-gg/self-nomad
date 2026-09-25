@@ -178,6 +178,13 @@ uv run self-nomad --repo /tmp/agent-self --json intake --request request.json --
 
 See [agent-intake.md](agent-intake.md) and [examples/e2e/](../examples/e2e/).
 
+## Local GUI
+
+`self-nomad gui --repo ./agent` serves the same operations as the TUI on
+`127.0.0.1` (status, detect, import preview, review, apply, pack, check,
+install, restore). It does not open when `--json` is set, and it does not
+need a display toolkit. See [cli-reference.md](cli-reference.md).
+
 ## Export a shareable snapshot
 
 ```bash

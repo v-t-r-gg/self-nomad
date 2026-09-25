@@ -52,6 +52,7 @@ macOS and Windows (3.13).
 | List proposals / applied log | yes | yes | no |
 | Approve and apply | yes | yes | no |
 | Interactive TUI | `self-nomad[tui]` | yes | no |
+| Local GUI | `self-nomad gui` | yes | no |
 
 ## Installation
 

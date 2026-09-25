@@ -34,6 +34,23 @@ self-nomad about
 
 ---
 
+### `self-nomad gui`
+
+| | |
+| --- | --- |
+| Purpose | Local HTML pages for the same operator loop as the TUI |
+| Mutation | Only after a preview: import creates a proposal; review never applies |
+| Arguments | Global `--repo`, optional `--port` (default 8765, loopback only) |
+| JSON | No. `--json` refuses to open the GUI |
+
+The pages use the Python standard library. `self-nomad[gui]` is an empty extra so install lines can name it. The core wheel does not require a GUI toolkit. No cloud backend.
+
+```bash
+self-nomad gui --repo ./agent
+```
+
+---
+
 ### `self-nomad tui`
 
 | | |

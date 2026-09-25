@@ -144,6 +144,18 @@ def callback(
 
 
 @app.command()
+def gui(
+    port: Annotated[int, typer.Option("--port")] = 8765,
+) -> None:
+    """Open the local GUI (standard-library pages over the same services)."""
+    if state.json_output:
+        fail("gui", ConflictError("--json does not open the GUI"))
+    from self_nomad.gui.server import serve
+
+    serve(state.repo or Path.cwd(), port)
+
+
+@app.command()
 def tui() -> None:
     """Open the keyboard-first operator TUI (optional self-nomad[tui] extra)."""
     repo = state.repo or Path.cwd()

@@ -61,6 +61,7 @@ mcp = [
 tui = [
   "textual>=2,<5",
 ]
+gui = []
 dev = [
   "build>=1.2",
   "jsonschema>=4.26.0",
