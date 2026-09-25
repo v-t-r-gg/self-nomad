@@ -34,6 +34,24 @@ self-nomad about
 
 ---
 
+### `self-nomad hub`
+
+| | |
+| --- | --- |
+| Purpose | Move an already-checked `.snpack`. Not a marketplace and not an upload API |
+| Mutation | `pull` installs only after `pack --check`. `publish` writes a checked file |
+| Arguments | `pull SOURCE --to DIR`, `publish --drop FILE --profile specialist`, `--yes-personal` for a personal pack |
+| JSON | Yes, when global `--json` is set |
+
+`publish` does not upload. A person commits the dropped file in the registry repository. See the ADR 0007 addendum.
+
+```bash
+self-nomad hub pull ./agent.snpack --to ./from-pack
+self-nomad --repo ./agent hub publish --drop ./agent.snpack
+```
+
+---
+
 ### `self-nomad gui`
 
 | | |

@@ -143,6 +143,65 @@ def callback(
     raise typer.Exit()
 
 
+hub_app = typer.Typer(help="Move an already-checked .snpack. Not a marketplace.")
+app.add_typer(hub_app, name="hub")
+
+
+@hub_app.command("pull")
+def hub_pull(
+    source: Annotated[str, typer.Argument()],
+    to: Annotated[Path, typer.Option("--to")],
+) -> None:
+    """Check a pack, then install it. The check cannot be skipped."""
+    from self_nomad.hub.client import pull_pack
+
+    try:
+        summary = pull_pack(source, to)
+    except (SelfNomadError, OSError, ValueError) as exc:
+        fail("hub", exc)
+    emit(
+        "hub",
+        True,
+        {
+            "action": "pull",
+            "repository": str(to.resolve()),
+            "content_digest": summary.content_digest,
+            "profile": summary.profile,
+        },
+    )
+
+
+@hub_app.command("publish")
+def hub_publish(
+    drop: Annotated[Path, typer.Option("--drop")],
+    profile: Annotated[str, typer.Option("--profile")] = "specialist",
+    yes_personal: Annotated[bool, typer.Option("--yes-personal")] = False,
+) -> None:
+    """Pack, check, and write a file to drop into the registry by hand."""
+    from self_nomad.hub.client import publish_pack
+
+    try:
+        summary = publish_pack(
+            state.repo or Path.cwd(),
+            drop,
+            profile=profile,
+            yes_personal=yes_personal,
+        )
+    except (SelfNomadError, OSError, ValueError) as exc:
+        fail("hub", exc)
+    emit(
+        "hub",
+        True,
+        {
+            "action": "publish",
+            "path": str(drop.resolve()),
+            "profile": summary.profile,
+            "content_digest": summary.content_digest,
+            "upload": False,
+        },
+    )
+
+
 @app.command()
 def gui(
     port: Annotated[int, typer.Option("--port")] = 8765,

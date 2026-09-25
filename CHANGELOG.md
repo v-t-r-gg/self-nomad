@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Thin workspace wrappers `codex`, `cursor`, and `copilot`. They compose `agents-md`. Cursor rules and a copilot instruction file are not merged into `AGENTS.md`. Codex `auth.json` and Cursor `mcp.json` stay excluded.
 - `self-nomad gui` serves the operator loop as local HTML over the same services. `self-nomad[gui]` adds no GUI toolkit. `--json` does not open it.
+- `self-nomad hub pull` and `hub publish` move an already-checked `.snpack`. Pull checks before install. Publish is a file drop, not an upload, and refuses a personal pack unless `--yes-personal` is set.
 
 ## [1.3.0] - 2026-09-25
 

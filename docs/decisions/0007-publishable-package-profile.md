@@ -101,3 +101,20 @@ would be treated as a public package.
 then writes a new local repository. Specialist is the default pack profile
 (strips `user_profile` and daily memory; long-term memory is opt-in).
 Namespace (`author/name`) is still deferred.
+
+## Addendum (1.4.0): checked-pack transport
+
+Decision 2 still stands. This repository does not host, search, or
+authenticate to a marketplace. `self-nomad hub pull` and
+`self-nomad hub publish` are a file transport in `self_nomad.hub`, not a
+marketplace client and not an MCP tool.
+
+- `hub pull` resolves a `.snpack` path, URL, or index name, runs
+  `pack --check`, then `install`. The check is not optional. A failing check
+  does not write the destination.
+- `hub publish` writes a specialist pack (a personal pack requires
+  `--yes-personal`), runs `pack --check`, and leaves that file for a human
+  to commit under the registry's `packages/` tree. There is no upload API.
+- A working Git clone is never the payload.
+- The earlier rejection of "hub client commands in the core CLI" was about
+  search, accounts, and authentication. These two verbs do none of those.

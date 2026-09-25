@@ -62,6 +62,7 @@ tui = [
   "textual>=2,<5",
 ]
 gui = []
+hub = []
 dev = [
   "build>=1.2",
   "jsonschema>=4.26.0",
