@@ -1,0 +1,28 @@
+schema_version: 1
+
+self:
+  id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeee1"
+  name: "upgrade-fixture"
+  description: "Frozen schema 1 tree shaped like the first public RC init output."
+
+content:
+  instructions: "identity/instructions.md"
+  persona: "identity/persona.md"
+  identity: "identity/identity.md"
+  user_profile: "identity/user.md"
+  long_term_memory: "memory/MEMORY.md"
+  daily_memory: "memory/daily"
+  knowledge: "memory/knowledge"
+  skills: "skills"
+  tool_notes: "tools/notes.md"
+  workflows: "workflows"
+  evaluations: "evals"
+
+skill_format: "agent-skills"
+policy: "policy/policy.yaml"
+
+adapters:
+  hermes:
+    enabled: true
+  openclaw:
+    enabled: true

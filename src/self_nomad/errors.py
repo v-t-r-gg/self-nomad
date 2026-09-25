@@ -53,6 +53,10 @@ class AmbiguousRuntimeError(SelfNomadError):
     """Runtime detection returned multiple candidates."""
 
 
+class PackError(SelfNomadError):
+    """A snapshot pack could not be written or verified."""
+
+
 class RestoreVerificationError(SelfNomadError):
     """Restored content did not match its planned source."""
 

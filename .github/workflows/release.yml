@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Default contents:read; the release job elevates for attestations and notes.
+permissions:
+  contents: read
+
+# Pin third-party actions to full commit SHAs (Node 24-compatible releases).
+
+jobs:
+  github-release:
+    name: Build, attest, and publish GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Sync build tooling
+        run: uv sync --extra dev --extra mcp
+      - name: Tag matches project.version
+        run: uv run python scripts/release_meta.py check-tag --tag "${GITHUB_REF_NAME}"
+      - name: Quality gates
+        run: |
+          uv lock --check
+          uv run ruff check .
+          uv run mypy
+          uv run python scripts/export_proposal_request_schema.py --check
+          uv run python scripts/check_docs.py
+          uv run pytest --cov=self_nomad --cov-report=term-missing
+      - name: Clean rebuild and checksums
+        run: uv run python scripts/build_release.py
+      - name: Installed-artifact smoke
+        run: |
+          uv run python scripts/release_smoke.py
+          uv run python scripts/mcp_smoke.py
+      - name: Operator acceptance
+        run: uv run python scripts/operator_acceptance.py
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+      - name: Compose release notes
+        run: |
+          VERSION="$(uv run python scripts/release_meta.py version)"
+          NOTES="docs/releases/${VERSION}.md"
+          {
+            if [ -f "$NOTES" ]; then
+              cat "$NOTES"
+              echo
+              echo "---"
+              echo
+            fi
+            echo "Artifacts are attested. Verify with:"
+            echo
+            echo '```bash'
+            echo "gh attestation verify self_nomad-${VERSION}-py3-none-any.whl --repo ${GITHUB_REPOSITORY}"
+            echo '```'
+          } > /tmp/release-notes.md
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          name: self-nomad ${{ github.ref_name }}
+          body_path: /tmp/release-notes.md
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'dev') }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+            dist/SHA256SUMS.asc
+          fail_on_unmatched_files: false
+          generate_release_notes: false

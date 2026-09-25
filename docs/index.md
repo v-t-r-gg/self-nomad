@@ -17,14 +17,15 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | Document | Topic |
 | --- | --- |
 | [Getting started](getting-started.md) | Init → propose → validate → approve → apply |
-| [CLI reference](cli-reference.md) | Every command and option |
+| [CLI reference](cli-reference.md) | Every command, including `about` and human output |
 | [Repository format](repository-format.md) | Manifest, policy, hashing, constraints |
 | [Runtime portability](runtime-portability.md) | Hermes and OpenClaw import/restore |
 | [Agent intake](agent-intake.md) | ProposalRequest preview/submit and receipts |
 | [MCP integration](mcp.md) | Local stdio server and host configs |
 | [Security / threat model](threat-model.md) | Trust boundaries and residual risks |
 | [Troubleshooting](troubleshooting.md) | Common failures and recovery |
-| [Upgrading](upgrading.md) | RC layout and 0.2 development notes |
+| [Upgrading](upgrading.md) | Moving to 1.0 |
+| [Compatibility](compatibility.md) | Frozen 1.0 contracts |
 
 ## Develop and extend
 
@@ -35,7 +36,9 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | [Adapter authoring](adapter-authoring.md) | Implementing another runtime adapter |
 | [Contributing](../CONTRIBUTING.md) | Local verification and PR expectations |
 | [Releasing](releasing.md) | Version-agnostic release procedure |
+| [1.0.0 notes](releases/1.0.0.md) | Stable release notes |
 | [ADRs](decisions/) | Historical design decisions |
+| [Ecosystem position](ecosystem.md) | Standalone product vs a future registry |
 
 ### MCP host guides
 
@@ -54,3 +57,4 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 - [Changelog](../CHANGELOG.md)
 - [Security policy](../SECURITY.md)
 - [License](../LICENSE)
+- [Future notes](future/) (not shipped product scope)

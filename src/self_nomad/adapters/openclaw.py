@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from self_nomad.adapters.base import RuntimeAdapter
+from self_nomad.adapters.kit import runtime_exclusions, transfer_plan, unmapped_exclusions
 from self_nomad.domain import (
     DetectionResult,
     Fidelity,
@@ -66,6 +67,9 @@ class OpenClawAdapter(RuntimeAdapter):
             if not source.exists():
                 continue
             action, before = self.mapping_action(source, target)
+            reason = None
+            if artifact == "instructions":
+                reason = "OpenClaw AGENTS.md is an adapted mapping of identity/instructions.md"
             mappings.append(
                 Mapping(
                     artifact=artifact,
@@ -74,26 +78,41 @@ class OpenClawAdapter(RuntimeAdapter):
                     fidelity=fidelity,
                     action=action,
                     before_sha256=before,
+                    reason=reason,
                 )
             )
-        known = (
-            ("heartbeat", "HEARTBEAT.md", Fidelity.LOSSY),
-            ("startup", "BOOT.md", Fidelity.RUNTIME_OWNED),
-            ("bootstrap", "BOOTSTRAP.md", Fidelity.RUNTIME_OWNED),
-            ("canvas", "canvas", Fidelity.UNSUPPORTED),
-        )
+        content = repository.load_manifest().content
         exclusions = [
-            Mapping(
-                artifact=artifact,
-                source=(runtime.root / relative) if (runtime.root / relative).exists() else None,
-                fidelity=fidelity,
-                action="exclude",
-                reason="known OpenClaw workspace artifact has no canonical v0.1 mapping",
-            )
-            for artifact, relative, fidelity in known
-        ]
-        exclusions.extend(
-            [
+            *runtime_exclusions(
+                runtime.root,
+                (
+                    (
+                        "heartbeat",
+                        "HEARTBEAT.md",
+                        Fidelity.LOSSY,
+                        "OpenClaw HEARTBEAT.md has no canonical mapping",
+                    ),
+                    (
+                        "startup",
+                        "BOOT.md",
+                        Fidelity.RUNTIME_OWNED,
+                        "OpenClaw BOOT.md is runtime-owned",
+                    ),
+                    (
+                        "bootstrap",
+                        "BOOTSTRAP.md",
+                        Fidelity.RUNTIME_OWNED,
+                        "OpenClaw BOOTSTRAP.md is runtime-owned",
+                    ),
+                    (
+                        "canvas",
+                        "canvas",
+                        Fidelity.UNSUPPORTED,
+                        "OpenClaw canvas has no canonical mapping",
+                    ),
+                ),
+            ),
+            *[
                 Mapping(
                     artifact=artifact,
                     fidelity=Fidelity.RUNTIME_OWNED,
@@ -101,36 +120,35 @@ class OpenClawAdapter(RuntimeAdapter):
                     reason="OpenClaw state directory is outside the portable workspace boundary",
                 )
                 for artifact in ("configuration", "credentials", "sessions", "agent_databases")
-            ]
-        )
-        content = repository.load_manifest().content
-        for artifact, relative, fidelity in (
-            ("knowledge", content.knowledge, Fidelity.UNSUPPORTED),
-            ("workflows", content.workflows, Fidelity.LOSSY),
-            ("evaluations", content.evaluations, Fidelity.UNSUPPORTED),
-        ):
-            path = repository.root / relative if relative else None
-            has_content = path and (
-                path.is_file()
-                or (
-                    path.is_dir()
-                    and any(item.is_file() and item.name != ".gitkeep" for item in path.rglob("*"))
-                )
-            )
-            if path and has_content:
-                exclusions.append(
-                    Mapping(
-                        artifact=artifact,
-                        source=path,
-                        fidelity=fidelity,
-                        action="exclude",
-                        reason="no portable OpenClaw mapping is defined",
-                    )
-                )
-        return TransferPlan(
+            ],
+            *unmapped_exclusions(
+                repository,
+                (
+                    (
+                        "knowledge",
+                        content.knowledge,
+                        Fidelity.UNSUPPORTED,
+                        "OpenClaw has no knowledge mapping",
+                    ),
+                    (
+                        "workflows",
+                        content.workflows,
+                        Fidelity.LOSSY,
+                        "OpenClaw workflows have no lossless portable mapping",
+                    ),
+                    (
+                        "evaluations",
+                        content.evaluations,
+                        Fidelity.UNSUPPORTED,
+                        "OpenClaw has no evaluations mapping",
+                    ),
+                ),
+            ),
+        ]
+        return transfer_plan(
             adapter=self.name,
             direction=direction,
-            repository_root=repository.root,
+            repository=repository,
             runtime=runtime,
             mappings=mappings,
             exclusions=exclusions,

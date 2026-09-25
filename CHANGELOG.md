@@ -7,12 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-17
+
+First stable release. Schema 1, CLI `--json` envelopes, and the seven-tool
+MCP surface are compatibility promises. See [compatibility.md](docs/compatibility.md).
+
+### Added
+
+- Human CLI identity: ASCII wordmark, `about`, and Rich panels/tables for
+  status, validate, review, intake, and adapter plans. `--json` envelopes are
+  unchanged. Banner respects TTY/`NO_COLOR`/`SELF_NOMAD_BANNER`.
+- Proposal review shows a unified diff. `--interactive` can approve or reject
+  from that surface and never applies.
+- `proposals` lists local records; `log` lists applied `self-nomad(audit):`
+  commits from Git. `init --git` writes the initial commit.
+- Apply refreshes a clean checked-out target (ADR 0008) and refuses a dirty
+  worktree.
+- `pack` writes a history-free snapshot (specialist vs personal) plus
+  `self-nomad.pack.json`. `pack --check` verifies the archive.
+- `install` unpacks a pack into a new repo only after staging validation
+  (digest, no Git history, no links, fail-closed secrets).
+- Adapter kit (`self_nomad.adapters.kit`) and `ExampleFilesAdapter` sample
+  (not registered). Hermes and OpenClaw always report unmapped classes.
+- Contract tests under `tests/adapters/`.
+
+### Changed
+
+- Packaging classifier is Production/Stable.
+
+## [0.2.0rc1] - 2026-08-16
+
+Operator-acceptance release candidate for the 0.2 intake and MCP slice.
+
 ### Added
 
 - Agent-facing proposal intake: strict `ProposalRequest` v1, preview/submit
   service, CLI `intake`, JSON Schema, and frozen-base idempotent receipts with
   crash recovery and target-commit preflight.
-- Policy limit `limits.maximum_request_bytes` (default 4 MiB).
+- Policy limit `limits.maximum_request_bytes` (default 4 MiB). Existing schema 1
+  policy files omit the field and receive the default.
 - Optional bounded local MCP server (`self-nomad-mcp`) behind
   `self-nomad[mcp]` (official Python MCP SDK v2): seven native tools
   (repository status/validate, intake preview/submit, proposal list/get/validate),
@@ -22,6 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation overhaul: docs index, getting started, CLI reference, Python
   API, runtime portability, troubleshooting, upgrading, documentation checker
   (`scripts/check_docs.py`), and end-to-end intake example.
+- Product-boundary ADR 0007 (standalone local CLI; a future registry consumes
+  validation and snapshot import/export) plus [docs/ecosystem.md](docs/ecosystem.md).
+- Clean rebuild helper (`scripts/build_release.py`), `SHA256SUMS` write/verify
+  (`scripts/checksums.py`), optional GPG detach-sign, and operator-acceptance
+  harness (`scripts/operator_acceptance.py`).
+- Frozen first-RC schema fixture and upgrade-path tests.
+- GitHub tag workflow that rebuilds artifacts, attests provenance, and opens a
+  pre-release with wheel, sdist, and checksums.
 
 ### Changed
 
@@ -43,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires a fixed absolute `--repo`, keeps protocol traffic on stdout and
   diagnostics on stderr, redacts staging paths and inline content, and uses
   fixed public error messages (no raw Git stderr or exception `repr`).
+
+### Known limitations (release candidate)
+
+- Target branches must be detached or switched away before proposal application.
+- Secret scanning is not general-purpose data-loss prevention.
+- Preview-first adapter flow: import/restore plan by default; `--yes` confirms
+  the displayed class of mutation only.
+- Snapshot export/import for a public registry is not in this release.
+- GitHub Artifact Attestations are produced on tagged releases; local rebuilds
+  write `SHA256SUMS` and sign with GPG only when a key is configured.
 
 ## [0.1.0rc1] - 2026-08-03
 
@@ -100,5 +151,7 @@ First public release candidate of the safety-hardened deterministic core.
   the displayed class of mutation only.
 - Compact local-state layout is not migrated from pre-RC development checkouts.
 
-[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v0.1.0rc1...HEAD
+[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.0.0
+[0.2.0rc1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v0.2.0rc1
 [0.1.0rc1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v0.1.0rc1

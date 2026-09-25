@@ -57,14 +57,33 @@ ops = [
 ]
 service = app.proposals()
 record = service.create(reason="Update memory", operations=ops)
+print(service.unified_diff(record.proposal.id))
 record = service.validate(record.proposal.id)
 record = service.approve(record.proposal.id, identifier="operator")
-# Ensure target branch is not checked out in any worktree, then:
-record = service.apply(record.proposal.id)
+record = service.apply(record.proposal.id)  # clean checked-out main is fine
+print(service.list_records())
+print(service.applied_history())
 ```
 
 States: `draft` → `materialized` → `validated` → `approved` → `applied`
 (plus `rejected`, `stale`, `failed`).
+
+## Snapshot pack
+
+```python
+summary = app.pack(Path("/tmp/agent.snpack"), profile="specialist")
+print(summary.content_digest, summary.skills, summary.omitted)
+checked = SelfNomad.check_pack(Path("/tmp/agent.snpack"))
+assert checked.content_digest == summary.content_digest
+installed, loaded = SelfNomad.install_pack(
+    Path("/tmp/agent.snpack"), Path("/tmp/agent-copy")
+)
+assert loaded.content_digest == summary.content_digest
+assert installed.repository.validate(strict=True).valid
+```
+
+The archive has no `.git`. Specialist profile strips user profile and daily
+memory; long-term memory requires `include_long_term_memory=True`.
 
 ## Intake preview and submit
 
@@ -86,6 +105,8 @@ Approval and apply remain separate (`proposals()`), never automatic from intake.
 
 ```python
 from self_nomad.adapters import default_registry
+# kit sample (not registered):
+# from self_nomad.adapters import ExampleFilesAdapter
 
 registry = default_registry()
 adapter = registry.get("hermes")  # or "openclaw"

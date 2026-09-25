@@ -15,7 +15,7 @@ from pathlib import Path
 
 from self_nomad import __version__
 from self_nomad.application import SelfNomad
-from tests.helpers import configure_git_identity, isolated_state_env, run_git
+from tests.helpers import ensure_initial_commit, isolated_state_env
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,9 +70,7 @@ def test_subprocess_propose_uses_isolated_state(tmp_path: Path) -> None:
     env = isolated_state_env(tmp_path / "state")
     instance = SelfNomad.initialize(tmp_path / "agent", name="sub-propose")
     root = instance.repository.root
-    configure_git_identity(root)
-    run_git(root, "add", ".")
-    run_git(root, "commit", "-m", "initial")
+    ensure_initial_commit(root)
     source = tmp_path / "user.md"
     source.write_text("# User\n\nPrefers concise subprocess output.\n", encoding="utf-8")
     change = tmp_path / "changes.yaml"

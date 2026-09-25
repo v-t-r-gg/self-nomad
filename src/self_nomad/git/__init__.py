@@ -1,3 +1,3 @@
-from self_nomad.git.backend import GitBackend, GitResult
+from self_nomad.git.backend import AppliedLogEntry, GitBackend, GitResult, WorktreeInfo
 
-__all__ = ["GitBackend", "GitResult"]
+__all__ = ["AppliedLogEntry", "GitBackend", "GitResult", "WorktreeInfo"]

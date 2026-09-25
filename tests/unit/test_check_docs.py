@@ -26,6 +26,8 @@ def test_cli_commands_include_core_set() -> None:
         "status",
         "propose",
         "review",
+        "proposals",
+        "log",
         "approve",
         "apply",
         "reject",
@@ -34,6 +36,9 @@ def test_cli_commands_include_core_set() -> None:
         "import",
         "restore",
         "intake",
+        "about",
+        "pack",
+        "install",
     ):
         assert name in cmds
 

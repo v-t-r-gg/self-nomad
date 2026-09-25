@@ -22,7 +22,7 @@ from self_nomad.errors import (
     ValidationFailedError,
 )
 from self_nomad.filesystem import atomic_write_bytes, atomic_write_text, contained_path, sha256_file
-from self_nomad.git import GitBackend
+from self_nomad.git import AppliedLogEntry, GitBackend
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
 from self_nomad.proposals.risk import classify_proposal_risk
@@ -217,6 +217,13 @@ class ProposalService:
         self.store.save(record)
         return record
 
+    def unified_diff(self, proposal_id: UUID) -> str:
+        """Unified diff from the proposal base commit to the materialized commit."""
+        record = self.store.load(proposal_id)
+        if not record.proposal_commit:
+            return ""
+        return self.git.diff_unified(record.proposal.base_commit, record.proposal_commit)
+
     def approve(self, proposal_id: UUID, identifier: str | None = None) -> ProposalRecord:
         record = self.store.load(proposal_id)
         if record.status is not ProposalStatus.VALIDATED:
@@ -252,11 +259,15 @@ class ProposalService:
                 record.status = ProposalStatus.STALE
                 self.store.save(record)
                 raise ProposalStaleError("target branch moved from the proposal base")
-            if proposal.target_branch in self.git.checked_out_branches():
-                raise ConflictError(
-                    "target branch is checked out; switch that worktree to another branch "
-                    "or detach HEAD"
-                )
+            checkout = self.git.worktree_for_branch(proposal.target_branch)
+            if checkout is not None:
+                if not self.git.is_clean(checkout.path):
+                    raise ConflictError(
+                        "target worktree is dirty; commit, stash, or discard local "
+                        "changes before apply"
+                    )
+                if checkout.head != proposal.base_commit:
+                    raise ConflictError("checked-out HEAD does not match the proposal base")
             if not record.worktree or not record.proposal_commit or not record.content_digest:
                 raise ProposalStateError("proposal record is incomplete")
             worktree = Path(record.worktree)
@@ -312,6 +323,8 @@ class ProposalService:
                 record.status = ProposalStatus.STALE
                 self.store.save(record)
                 raise
+            if checkout is not None:
+                self.git.reset_hard(final_commit, cwd=checkout.path)
             record.status = ProposalStatus.APPLIED
             record.applied_commit = final_commit
             self.store.save(record)
@@ -347,6 +360,16 @@ class ProposalService:
             record.approval_identifier = None
             self.store.save(record)
             raise
+
+    def list_records(self) -> list[ProposalRecord]:
+        return sorted(
+            self.store.list(),
+            key=lambda item: item.proposal.created_at,
+            reverse=True,
+        )
+
+    def applied_history(self, *, limit: int = 20) -> list[AppliedLogEntry]:
+        return self.git.applied_log(limit=limit)
 
     def cleanup(self, proposal_id: UUID) -> None:
         record = self.store.load(proposal_id)

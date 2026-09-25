@@ -8,8 +8,11 @@ existing agent, review changes as typed proposals, and restore the portable
 self on another machine or supported runtime **without** copying credentials
 or session databases.
 
-It is **not** an agent runtime and does not call an LLM. It is the portability
-and change-governance layer around the agents you already run.
+It is **not** an agent runtime, does not call an LLM, and is not a public
+registry or marketplace. It is the portability and change-governance layer
+around the agents you already run. A separate registry, if built, may consume
+this toolkit for snapshot import and export; see
+[docs/ecosystem.md](docs/ecosystem.md).
 
 ## Why it exists
 
@@ -20,13 +23,14 @@ branch advancement under operator control.
 
 ## Development status
 
-**Version `0.2.0.dev0`** (post-`v0.1.0rc1`). The deterministic core supports:
+**Version `1.0.0`**. The deterministic core supports:
 
 - Repository init and structural validation
 - Isolated Git proposals (materialize → validate → approve → apply)
 - Agent intake (`ProposalRequest` v1) with idempotent receipts
 - Optional local stdio **MCP** surface for inspection and intake (no approve/apply)
-- Hermes and OpenClaw adapters (detect / import / restore)
+- Hermes and OpenClaw adapters (detect / import / restore), plus an
+  unregistered authoring-kit sample (`example-files`)
 
 Supported Python: **3.11, 3.12, 3.13**. CI exercises Ubuntu (3.11–3.13) plus
 macOS and Windows (3.13).
@@ -35,6 +39,7 @@ macOS and Windows (3.13).
 
 | Capability | CLI | Python | MCP |
 | --- | --: | --: | --: |
+| Wordmark / about | yes | no | no |
 | Initialize repository | yes | yes | no |
 | Validate repository | yes | yes | yes |
 | Detect runtime | yes | yes | no |
@@ -43,6 +48,8 @@ macOS and Windows (3.13).
 | Preview intake | yes | yes | yes |
 | Submit proposal (intake) | yes | yes | yes |
 | Validate proposal | yes | yes | yes |
+| Pack / check / install snapshot | yes | yes | no |
+| List proposals / applied log | yes | yes | no |
 | Approve and apply | yes | yes | no |
 
 ## Installation
@@ -89,8 +96,6 @@ uv run self-nomad --repo /tmp/example propose \
 uv run self-nomad --repo /tmp/example validate PROPOSAL_ID
 uv run self-nomad --repo /tmp/example approve PROPOSAL_ID --identifier operator
 
-# Target branch must not be checked out in any worktree before apply:
-git -C /tmp/example switch -c review-work
 uv run self-nomad --repo /tmp/example apply PROPOSAL_ID
 ```
 
@@ -101,7 +106,7 @@ Full walkthrough: [docs/getting-started.md](docs/getting-started.md).
 - **No credentials, sessions, or runtime databases** in the portable self
 - Proposals bind complete Git trees and declared diffs
 - Approval is an explicit operator step (CLI/Python only; not exposed on MCP)
-- Apply refuses a target branch checked out in any worktree
+- Apply refreshes a clean checked-out target; dirty worktrees are refused
 - Restore is transactional (stage → verify → backup → swap → verify → rollback)
 - Secret scanning catches high-confidence patterns only — not general DLP
 - Git clean/smudge/process filters are **trusted local infrastructure**
@@ -132,8 +137,10 @@ uv run python scripts/export_proposal_request_schema.py --check
 uv run python scripts/check_docs.py
 uv run pytest --cov=self_nomad --cov-report=term-missing
 uv build
+uv run python scripts/build_release.py
 uv run python scripts/release_smoke.py
 uv run python scripts/mcp_smoke.py
+uv run python scripts/operator_acceptance.py
 ```
 
 ## License

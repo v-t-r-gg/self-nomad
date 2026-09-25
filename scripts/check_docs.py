@@ -43,6 +43,7 @@ HISTORICAL_VERSION_ALLOW = {
     "CHANGELOG.md",
     "docs/upgrading.md",
     "docs/decisions",
+    "docs/releases",
 }
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")

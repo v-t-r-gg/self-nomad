@@ -1,6 +1,6 @@
 # Architecture
 
-Current system architecture for self-nomad `0.2.0.dev0` (schema version 1).
+Current system architecture for self-nomad `1.0.0` (schema version 1).
 
 ## Layers
 
@@ -35,7 +35,8 @@ CLI (Typer)  /  MCP server (optional)  /  Python SelfNomad API
 | `self_nomad.repository` | Layout, validation digests |
 | `self_nomad.proposals` | Isolated proposal service |
 | `self_nomad.intake` | ProposalRequest load/preview/submit |
-| `self_nomad.adapters` | Hermes / OpenClaw |
+| `self_nomad.adapters` | Hermes / OpenClaw plus `kit` / `example` |
+| `self_nomad.snapshot` | History-free pack / check / install |
 | `self_nomad.mcp_server` | Optional MCP (depends on `mcp` extra) |
 | `self_nomad.git` | Managed Git invocations |
 | `self_nomad.filesystem` | Atomic writes, hashing, path rules |
@@ -61,8 +62,9 @@ stateDiagram-v2
     stale --> [*]
 ```
 
-Apply uses `git update-ref <ref> <new> <expected-old>` and refuses a target
-branch checked out in any worktree.
+Apply uses `git update-ref <ref> <new> <expected-old>`. A clean checked-out
+target is then `reset --hard` to the new commit. A dirty worktree is refused
+([ADR 0008](decisions/0008-apply-checked-out-worktree.md)).
 
 ## Intake and receipts
 
@@ -104,3 +106,6 @@ on stdout; diagnostics on stderr. Host filters complement the server allow-list.
 - [0004 Local state](decisions/0004-local-state.md)
 - [0005 Agent intake](decisions/0005-agent-intake.md)
 - [0006 Bounded MCP surface](decisions/0006-bounded-mcp-surface.md)
+- [0007 Publishable package profile](decisions/0007-publishable-package-profile.md)
+- [0008 Apply on a clean checked-out target](decisions/0008-apply-checked-out-worktree.md)
+- [Compatibility](compatibility.md)

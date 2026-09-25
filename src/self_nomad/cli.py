@@ -1,17 +1,19 @@
 import json
 import sys
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import Annotated, Any, NoReturn
 from uuid import UUID
 
 import typer
 import yaml
 from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
+from typer.core import TyperGroup
 
 from self_nomad import __version__
 from self_nomad.adapters import default_registry
 from self_nomad.application import SelfNomad
+from self_nomad.branding import print_help_identity
 from self_nomad.domain import FileOperation, RuntimeRef
 from self_nomad.errors import (
     AmbiguousRuntimeError,
@@ -26,8 +28,38 @@ from self_nomad.intake import (
 )
 from self_nomad.manifest.loader import load_yaml
 from self_nomad.policy import Policy
+from self_nomad.render import (
+    render_about,
+    render_detection,
+    render_init,
+    render_install,
+    render_intake_preview,
+    render_intake_submit,
+    render_log,
+    render_pack,
+    render_plan,
+    render_proposal_valid,
+    render_proposals,
+    render_review,
+    render_simple,
+    render_status,
+    render_validation,
+)
+from self_nomad.review_ui import review_record, run_interactive_review
 
-app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
+
+class BrandedGroup(TyperGroup):
+    def format_help(self, ctx: Any, formatter: Any) -> None:
+        print_help_identity(console)
+        super().format_help(ctx, formatter)
+
+
+app = typer.Typer(
+    no_args_is_help=True,
+    pretty_exceptions_enable=False,
+    cls=BrandedGroup,
+    rich_markup_mode="rich",
+)
 console = Console()
 
 
@@ -108,7 +140,24 @@ def init(
     result = {"repository": str(instance.repository.root)}
     emit("init", True, result)
     if not state.json_output:
-        console.print(f"Initialized self repository at [bold]{instance.repository.root}[/bold]")
+        render_init(console, instance.repository.root)
+
+
+@app.command()
+def about() -> None:
+    """Show the self-nomad wordmark and what this tool is (and is not)."""
+    if state.json_output:
+        emit(
+            "about",
+            True,
+            {
+                "name": "self-nomad",
+                "version": __version__,
+                "tagline": "an agent's self, untethered from its runtime",
+            },
+        )
+        return
+    render_about(console, __version__)
 
 
 @app.command("intake")
@@ -141,24 +190,20 @@ def intake_command(
             payload = result.model_dump(mode="json")
             emit("intake", True, payload)
             if not state.json_output:
-                verb = "Reused" if result.reused else "Submitted"
-                console.print(
-                    f"{verb} proposal [bold]{result.proposal_id}[/bold] "
-                    f"({result.status}); next: {', '.join(result.suggested_next) or 'none'}"
-                )
+                render_intake_submit(console, result)
             return
         preview = service.preview(loaded)
         payload = preview.model_dump(mode="json")
         emit("intake", preview.eligible, payload)
         if not state.json_output:
-            status = "eligible" if preview.eligible else "not eligible"
-            console.print(
-                f"Intake preview {status}; risk={preview.risk}; "
-                f"ops={len(preview.operations)}; next: "
-                f"{', '.join(preview.suggested_next) or 'none'}"
+            render_intake_preview(
+                console,
+                eligible=preview.eligible,
+                risk=preview.risk,
+                operations=len(preview.operations),
+                next_actions=preview.suggested_next,
+                findings=preview.findings,
             )
-            for finding in preview.findings:
-                console.print(f"{finding.severity.upper()} {finding.code}: {finding.message}")
         if not preview.eligible:
             raise typer.Exit(3)
     except IntakeError as exc:
@@ -195,16 +240,14 @@ def validate(
             record = instance.proposals().validate(proposal_id)
             emit("validate", True, record.model_dump(mode="json"))
             if not state.json_output:
-                console.print(f"Proposal {proposal_id} is valid.")
+                render_proposal_valid(console, proposal_id, str(record.status))
             return
         result = instance.repository.validate(strict=strict)
     except SelfNomadError as exc:
         fail("validate", exc, 3)
     emit("validate", result.valid, result.model_dump(mode="json"))
     if not state.json_output:
-        for finding in result.findings:
-            console.print(f"{finding.severity.upper()} {finding.code}: {finding.message}")
-        console.print("Repository is valid." if result.valid else "Repository is invalid.")
+        render_validation(console, result)
     if not result.valid:
         raise typer.Exit(3)
 
@@ -217,20 +260,134 @@ def status() -> None:
         manifest = instance.repository.load_manifest()
         validation = instance.repository.validate()
     except SelfNomadError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(2) from exc
+        fail("status", exc)
+    proposals = [
+        {"id": str(record.proposal.id), "status": str(record.status)}
+        for record in instance.proposals().store.list()
+    ]
     result = {
         "repository": str(instance.repository.root),
         "self": manifest.self.model_dump(mode="json"),
         "valid": validation.valid,
-        "proposals": [
-            {"id": str(record.proposal.id), "status": record.status}
-            for record in instance.proposals().store.list()
-        ],
+        "proposals": proposals,
     }
     emit("status", validation.valid, result)
     if not state.json_output:
-        console.print(f"{manifest.self.name}: {'valid' if validation.valid else 'invalid'}")
+        render_status(
+            console,
+            name=manifest.self.name,
+            self_id=str(manifest.self.id),
+            repository=instance.repository.root,
+            valid=validation.valid,
+            proposals=proposals,
+        )
+
+
+@app.command()
+def proposals() -> None:
+    """List local proposal records (newest first)."""
+    try:
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        records = instance.proposals().list_records()
+    except SelfNomadError as exc:
+        fail("proposals", exc)
+    rows = [
+        {
+            "id": str(record.proposal.id),
+            "status": str(record.status),
+            "reason": record.proposal.reason,
+            "risk": str(record.proposal.risk),
+            "target_branch": record.proposal.target_branch,
+        }
+        for record in records
+    ]
+    emit("proposals", True, {"proposals": rows})
+    if not state.json_output:
+        render_proposals(console, rows)
+
+
+@app.command()
+def pack(
+    output: Annotated[Path | None, typer.Option("--out")] = None,
+    profile: Annotated[str, typer.Option("--profile")] = "specialist",
+    include_long_term_memory: Annotated[
+        bool, typer.Option("--include-long-term-memory")
+    ] = False,
+    check: Annotated[Path | None, typer.Option("--check")] = None,
+) -> None:
+    """Write or verify a history-free snapshot pack."""
+    try:
+        if check is not None:
+            summary = SelfNomad.check_pack(check)
+            payload = {
+                "valid": True,
+                "path": str(check.resolve()),
+                "summary": summary.model_dump(mode="json"),
+            }
+            emit("pack", True, payload)
+            if not state.json_output:
+                render_pack(console, path=check, summary=summary)
+            return
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        destination = output
+        if destination is None:
+            name = instance.repository.load_manifest().self.name
+            destination = Path(f"{name}-{profile}.snpack")
+        summary = instance.pack(
+            destination,
+            profile=profile,
+            include_long_term_memory=include_long_term_memory,
+        )
+    except (SelfNomadError, OSError, ValueError) as exc:
+        fail("pack", exc)
+    payload = {
+        "path": str(destination.resolve()),
+        "profile": summary.profile,
+        "content_digest": summary.content_digest,
+        "summary": summary.model_dump(mode="json"),
+    }
+    emit("pack", True, payload)
+    if not state.json_output:
+        render_pack(console, path=destination, summary=summary)
+
+
+@app.command()
+def install(
+    archive: Path,
+    destination: Annotated[Path, typer.Option("--to")],
+    git: Annotated[bool, typer.Option("--git/--no-git")] = True,
+) -> None:
+    """Install a snapshot pack into a new local repository after validation."""
+    try:
+        instance, summary = SelfNomad.install_pack(
+            archive, destination, initialize_git=git
+        )
+    except (SelfNomadError, OSError, ValueError) as exc:
+        fail("install", exc)
+    payload = {
+        "repository": str(instance.repository.root),
+        "content_digest": summary.content_digest,
+        "summary": summary.model_dump(mode="json"),
+    }
+    emit("install", True, payload)
+    if not state.json_output:
+        render_install(console, path=instance.repository.root, summary=summary)
+
+
+@app.command("log")
+def history_log(
+    limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 20,
+) -> None:
+    """Show applied proposal commits from Git history on the current branch."""
+    try:
+        instance = SelfNomad.open(state.repo or Path.cwd())
+        entries = instance.proposals().applied_history(limit=limit)
+    except SelfNomadError as exc:
+        fail("log", exc)
+    rows = [{"commit": item.commit, "subject": item.subject} for item in entries]
+    emit("log", True, {"commits": rows})
+    if not state.json_output:
+        render_log(console, rows)
 
 
 def runtime_for(adapter_name: str, path: Path | None) -> RuntimeRef:
@@ -257,8 +414,7 @@ def detect(
         fail("detect", exc)
     emit("detect", True, result.model_dump(mode="json"))
     if not state.json_output:
-        for candidate in result.candidates:
-            console.print(f"{candidate.name}: {candidate.root}")
+        render_detection(console, result)
 
 
 @app.command("diff")
@@ -283,12 +439,7 @@ def diff_runtime(
         fail("diff", exc)
     emit("diff", True, plan.model_dump(mode="json"))
     if not state.json_output:
-        for mapping in plan.mappings:
-            console.print(
-                f"{mapping.fidelity.value.upper():10} {mapping.action:9} {mapping.artifact}"
-            )
-        for excluded in plan.exclusions:
-            console.print(f"{excluded.fidelity.value.upper():18} {excluded.artifact}")
+        render_plan(console, plan)
 
 
 @app.command("import")
@@ -306,14 +457,18 @@ def import_runtime(
         if not yes:
             emit("import", True, {"applied": False, "plan": plan.model_dump(mode="json")})
             if not state.json_output:
-                console.print("Import plan only; pass --yes to create a proposal.")
+                render_plan(
+                    console,
+                    plan,
+                    preview_note="Import plan only; pass --yes to create a proposal.",
+                )
             return
         record = instance.create_import_proposal(plan, reason=reason)
     except SelfNomadError as exc:
         fail("import", exc)
     emit("import", True, {"applied": True, "proposal": record.model_dump(mode="json")})
     if not state.json_output:
-        console.print(f"Created import proposal {record.proposal.id}.")
+        render_simple(console, "import", f"Created import proposal {record.proposal.id}.")
 
 
 @app.command()
@@ -334,14 +489,22 @@ def restore(
         if not yes:
             emit("restore", True, {"applied": False, "plan": plan.model_dump(mode="json")})
             if not state.json_output:
-                console.print("Restore plan only; pass --yes to apply it.")
+                render_plan(
+                    console,
+                    plan,
+                    preview_note="Restore plan only; pass --yes to apply it.",
+                )
             return
         result = adapter.apply_restore(plan)
     except (SelfNomadError, ValueError) as exc:
         fail("restore", exc)
     emit("restore", True, {"applied": True, "result": result.model_dump(mode="json")})
     if not state.json_output:
-        console.print(f"Restored {len(result.written)} files; backup: {result.backup_root}")
+        render_simple(
+            console,
+            "restore",
+            f"Restored {len(result.written)} files; backup: {result.backup_root}",
+        )
 
 
 @app.command()
@@ -363,23 +526,47 @@ def propose(
         fail("propose", exc)
     emit("propose", True, record.model_dump(mode="json"))
     if not state.json_output:
-        console.print(f"Materialized proposal [bold]{record.proposal.id}[/bold]")
+        render_simple(console, "propose", f"Materialized proposal {record.proposal.id}")
 
 
 @app.command()
-def review(proposal_id: UUID) -> None:
-    """Show proposal provenance, operations, and state."""
+def review(
+    proposal_id: UUID,
+    interactive: Annotated[
+        bool,
+        typer.Option(
+            "--interactive",
+            help="Approve or reject from this review. Never applies.",
+        ),
+    ] = False,
+    identifier: Annotated[
+        str | None,
+        typer.Option("--identifier", help="Approval identifier used with --interactive"),
+    ] = None,
+) -> None:
+    """Show proposal provenance, operations, unified diff, and state."""
+    if interactive and state.json_output:
+        fail("review", ValueError("--interactive cannot be combined with --json"))
     try:
         instance = SelfNomad.open(state.repo or Path.cwd())
-        record = instance.proposals().store.load(proposal_id)
-    except SelfNomadError as exc:
+        service = instance.proposals()
+        record, diff = review_record(service, proposal_id)
+        if interactive:
+            record = run_interactive_review(
+                console,
+                service,
+                record,
+                identifier=identifier,
+                diff=diff,
+            )
+    except (SelfNomadError, OSError, ValueError) as exc:
         fail("review", exc)
-    emit("review", True, record.model_dump(mode="json"))
-    if not state.json_output:
-        console.print(f"Proposal {proposal_id}: {record.status}")
-        console.print(f"Reason: {record.proposal.reason}")
-        for operation in record.proposal.operations:
-            console.print(f"  {operation.kind.upper():7} {operation.path}")
+    payload = record.model_dump(mode="json")
+    if diff:
+        payload["unified_diff"] = diff
+    emit("review", True, payload)
+    if not state.json_output and not interactive:
+        render_review(console, record, diff=diff)
 
 
 @app.command()
@@ -395,7 +582,7 @@ def approve(
         fail("approve", exc)
     emit("approve", True, record.model_dump(mode="json"))
     if not state.json_output:
-        console.print(f"Approved proposal {proposal_id}.")
+        render_simple(console, "approve", f"Approved proposal {proposal_id}.")
 
 
 @app.command("apply")
@@ -408,7 +595,11 @@ def apply_proposal(proposal_id: UUID) -> None:
         fail("apply", exc, 4)
     emit("apply", True, record.model_dump(mode="json"))
     if not state.json_output:
-        console.print(f"Applied proposal {proposal_id} at {record.applied_commit}.")
+        render_simple(
+            console,
+            "apply",
+            f"Applied proposal {proposal_id} at {record.applied_commit}.",
+        )
 
 
 @app.command()
@@ -424,7 +615,7 @@ def reject(
         fail("reject", exc)
     emit("reject", True, record.model_dump(mode="json"))
     if not state.json_output:
-        console.print(f"Rejected proposal {proposal_id}.")
+        render_simple(console, "reject", f"Rejected proposal {proposal_id}.", ok=False)
 
 
 def main() -> None:

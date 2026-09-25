@@ -96,8 +96,6 @@ Continue with existing commands:
 self-nomad --repo ./agent-self review PROPOSAL_ID
 self-nomad --repo ./agent-self validate PROPOSAL_ID
 self-nomad --repo ./agent-self approve PROPOSAL_ID --identifier HUMAN
-# Target branch must not be checked out in any worktree.
-git switch -c review-work
 self-nomad --repo ./agent-self apply PROPOSAL_ID
 ```
 
@@ -147,8 +145,8 @@ record (`request_id`, `request_digest`, `runtime`, `agent_identifier`,
 ## Secrets and apply rules
 
 High-confidence secret patterns are scanned on content and provenance during
-preview/submit. Application still requires a detached or switched-away target
-branch. Secret scanning is not general-purpose DLP.
+preview/submit. Apply refreshes a clean checked-out target and refuses a dirty
+worktree. Secret scanning is not general-purpose DLP.
 
 ## Runtime integration
 

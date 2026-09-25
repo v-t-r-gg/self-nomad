@@ -113,14 +113,17 @@ jobs:
           enable-cache: true
       - name: Sync build tooling
         run: uv sync --extra dev
-      - name: Build wheel and sdist
-        run: uv build
+      - name: Clean rebuild, checksums
+        run: uv run python scripts/build_release.py
       - name: Inspect artifacts
         run: |
           uv run python - <<'PY'
           import hashlib, tarfile, zipfile
           from pathlib import Path
-          for path in sorted(Path("dist").iterdir()):
+          from scripts.checksums import verify_checksums
+          dist = Path("dist")
+          verify_checksums(dist)
+          for path in sorted(dist.iterdir()):
               if not path.is_file():
                   continue
               digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -131,14 +134,21 @@ jobs:
               elif path.name.endswith(".tar.gz"):
                   with tarfile.open(path, "r:gz") as t:
                       assert any(n.endswith("LICENSE") for n in t.getnames())
+          assert (dist / "SHA256SUMS").is_file()
           PY
       - name: Installed-artifact smoke tests (base, no MCP extra)
         run: uv run python scripts/release_smoke.py
       - name: Installed-artifact MCP smoke tests
         run: uv run python scripts/mcp_smoke.py
+      - name: Operator acceptance (installed wheel)
+        run: uv run python scripts/operator_acceptance.py
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-package-distributions
-          path: dist/*
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+            dist/SHA256SUMS.asc
           if-no-files-found: error

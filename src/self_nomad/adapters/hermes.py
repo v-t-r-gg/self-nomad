@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from self_nomad.adapters.base import RuntimeAdapter
+from self_nomad.adapters.kit import runtime_exclusions, transfer_plan, unmapped_exclusions
 from self_nomad.domain import (
     DetectionResult,
     Fidelity,
@@ -72,11 +73,11 @@ class HermesAdapter(RuntimeAdapter):
                     before_sha256=before,
                 )
             )
-        exclusions = self._exclusions(runtime)
-        return TransferPlan(
+        exclusions = self._exclusions(runtime, repository)
+        return transfer_plan(
             adapter=self.name,
             direction="import",
-            repository_root=repository.root,
+            repository=repository,
             runtime=runtime,
             mappings=mappings,
             exclusions=exclusions,
@@ -100,65 +101,130 @@ class HermesAdapter(RuntimeAdapter):
                     before_sha256=before,
                 )
             )
-        exclusions = self._exclusions(runtime)
-        content = repository.load_manifest().content
-        for artifact, relative in (
-            ("instructions", content.instructions),
-            ("identity", content.identity),
-            ("daily_memory", content.daily_memory),
-            ("knowledge", content.knowledge),
-            ("tool_notes", content.tool_notes),
-            ("workflows", content.workflows),
-            ("evaluations", content.evaluations),
-        ):
-            if relative and self._has_content(repository.root / relative):
-                exclusions.append(
-                    Mapping(
-                        artifact=artifact,
-                        source=repository.root / relative,
-                        fidelity=Fidelity.UNSUPPORTED,
-                        action="exclude",
-                        reason="Hermes v0.1 mapping is not defined",
-                    )
-                )
-        return TransferPlan(
+        return transfer_plan(
             adapter=self.name,
             direction="restore",
-            repository_root=repository.root,
+            repository=repository,
             runtime=runtime,
             mappings=mappings,
-            exclusions=exclusions,
+            exclusions=self._exclusions(runtime, repository),
         )
 
-    @staticmethod
-    def _has_content(path: Path) -> bool:
-        return path.is_file() or (
-            path.is_dir()
-            and any(item.is_file() and item.name != ".gitkeep" for item in path.rglob("*"))
-        )
-
-    def _exclusions(self, runtime: RuntimeRef) -> list[Mapping]:
-        known = (
-            ("credentials", ".env", Fidelity.EXCLUDED_SENSITIVE),
-            ("sessions", "state.db", Fidelity.RUNTIME_OWNED),
-            ("configuration", "config.yaml", Fidelity.RUNTIME_OWNED),
-            ("cron_jobs", "cron", Fidelity.RUNTIME_OWNED),
-            ("plugins", "plugins", Fidelity.RUNTIME_OWNED),
-            ("checkpoints", "checkpoints", Fidelity.RUNTIME_OWNED),
-            ("backups", "backups", Fidelity.RUNTIME_OWNED),
-            ("state_snapshots", "state-snapshots", Fidelity.RUNTIME_OWNED),
-            ("logs", "logs", Fidelity.RUNTIME_OWNED),
-            ("gateway_state", "gateway", Fidelity.RUNTIME_OWNED),
-        )
+    def _exclusions(self, runtime: RuntimeRef, repository: SelfRepository) -> list[Mapping]:
+        content = repository.load_manifest().content
         return [
-            Mapping(
-                artifact=artifact,
-                source=(runtime.root / relative) if (runtime.root / relative).exists() else None,
-                fidelity=fidelity,
-                action="exclude",
-                reason="known Hermes operational state is not portable",
-            )
-            for artifact, relative, fidelity in known
+            *runtime_exclusions(
+                runtime.root,
+                (
+                    (
+                        "credentials",
+                        ".env",
+                        Fidelity.EXCLUDED_SENSITIVE,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "sessions",
+                        "state.db",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "configuration",
+                        "config.yaml",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "cron_jobs",
+                        "cron",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "plugins",
+                        "plugins",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "checkpoints",
+                        "checkpoints",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "backups",
+                        "backups",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "state_snapshots",
+                        "state-snapshots",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "logs",
+                        "logs",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                    (
+                        "gateway_state",
+                        "gateway",
+                        Fidelity.RUNTIME_OWNED,
+                        "known Hermes operational state is not portable",
+                    ),
+                ),
+            ),
+            *unmapped_exclusions(
+                repository,
+                (
+                    (
+                        "instructions",
+                        content.instructions,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no instructions mapping",
+                    ),
+                    (
+                        "identity",
+                        content.identity,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no identity-file mapping",
+                    ),
+                    (
+                        "daily_memory",
+                        content.daily_memory,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no daily-memory mapping",
+                    ),
+                    (
+                        "knowledge",
+                        content.knowledge,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no knowledge mapping",
+                    ),
+                    (
+                        "tool_notes",
+                        content.tool_notes,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no tool-notes mapping",
+                    ),
+                    (
+                        "workflows",
+                        content.workflows,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no workflows mapping",
+                    ),
+                    (
+                        "evaluations",
+                        content.evaluations,
+                        Fidelity.UNSUPPORTED,
+                        "Hermes has no evaluations mapping",
+                    ),
+                ),
+            ),
         ]
 
     def validate(

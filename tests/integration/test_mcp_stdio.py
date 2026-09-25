@@ -12,7 +12,7 @@ import pytest
 
 from self_nomad.application import SelfNomad
 from self_nomad.mcp_server.tools import EXPECTED_TOOL_NAMES
-from tests.helpers import configure_git_identity, run_git
+from tests.helpers import ensure_initial_commit
 
 pytest.importorskip("mcp")
 
@@ -21,9 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 def _repo(tmp_path: Path) -> Path:
     app = SelfNomad.initialize(tmp_path / "agent", name="mcp-stdio")
-    configure_git_identity(app.repository.root)
-    run_git(app.repository.root, "add", ".")
-    run_git(app.repository.root, "commit", "-m", "initial")
+    ensure_initial_commit(app.repository.root)
     return app.repository.root.resolve()
 
 

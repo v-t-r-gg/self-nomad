@@ -19,8 +19,8 @@
 
 ## Attacker-controlled inputs
 
-Manifest paths, repository files, intake requests, adapter runtime trees, and
-MCP tool payloads.
+Manifest paths, repository files, intake requests, adapter runtime trees,
+MCP tool payloads, and third-party snapshot packs (`install` / `pack --check`).
 
 ## Enforced invariants
 
@@ -31,8 +31,12 @@ MCP tool payloads.
 - No execution of repository-provided tests/scripts as product behavior
 - Managed Git: hooks disabled (`core.hooksPath` null device), no prompts
 - Proposal validation binds complete tree + declared diff
-- Apply refuses checked-out target branches
+- Apply compare-and-swap plus reset of a clean checked-out worktree;
+  dirty worktrees are refused
+- Pack install extracts to staging and validates before writing the destination
+  (digest match, no `.git`, no links, no path escape, fail-closed secrets)
 - Restore: stage, verify, backup, swap, verify, rollback
+- Adapters report unmapped classes; they never run Git or approve
 
 ## Proposal and approval guarantees
 
@@ -58,13 +62,16 @@ resulting tree bytes, not the filter program.
 
 ## Residual risks
 
-- Git history retains deleted content
+- Git history retains deleted content (use `pack`, not a live clone)
 - Structural validation is not behavioral safety of agent instructions
 - Secret scanning is not general DLP
 - Compromised host can point MCP at any local path the operator allows
 - Agents with shell outside MCP can bypass the MCP surface
+- Apply after `update-ref` and before `reset --hard` can leave a moved ref
+  with a stale worktree if the process dies (recover with `git reset --hard HEAD`)
 
 ## Explicit product exclusions
 
 No LLM calls, no remote push from apply, no credential vaults, no automatic
-approval, no remote MCP transports in the current slice.
+approval, no remote MCP transports, no marketplace hosting or remote package
+index in this product ([ADR 0007](decisions/0007-publishable-package-profile.md)).

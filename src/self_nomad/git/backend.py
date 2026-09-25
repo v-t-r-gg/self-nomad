@@ -15,6 +15,19 @@ class GitResult:
 
 
 @dataclass(frozen=True)
+class WorktreeInfo:
+    path: Path
+    head: str
+    branch: str | None
+
+
+@dataclass(frozen=True)
+class AppliedLogEntry:
+    commit: str
+    subject: str
+
+
+@dataclass(frozen=True)
 class CommitPathEntry:
     """Inspection of a repository path at an exact commit (no checkout)."""
 
@@ -117,6 +130,33 @@ class GitBackend:
             "status", "--porcelain=v1", "--untracked-files=all", cwd=worktree
         ).stdout
 
+    def diff_unified(self, base: str, commit: str) -> str:
+        """Return a pager-free unified diff. Exit status 1 (differences) is success."""
+        try:
+            completed = subprocess.run(
+                [
+                    *self._git_prefix(),
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-color",
+                    "--find-renames",
+                    base,
+                    commit,
+                ],
+                cwd=self.root,
+                env=self._environment(),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise GitOperationError(f"Git command could not run: {exc}") from exc
+        if completed.returncode not in {0, 1}:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise GitOperationError(f"git diff failed: {detail}")
+        return completed.stdout
+
     def changed_paths(self, base: str, commit: str) -> dict[str, str]:
         output = self.run("diff-tree", "--no-commit-id", "--name-status", "-r", base, commit).stdout
         result: dict[str, str] = {}
@@ -126,11 +166,86 @@ class GitBackend:
         return result
 
     def checked_out_branches(self) -> set[str]:
-        branches: set[str] = set()
+        return {item.branch for item in self.list_worktrees() if item.branch}
+
+    def list_worktrees(self) -> list[WorktreeInfo]:
+        items: list[WorktreeInfo] = []
+        path: Path | None = None
+        head = ""
+        branch: str | None = None
+
+        def flush() -> None:
+            nonlocal path, head, branch
+            if path is not None:
+                items.append(WorktreeInfo(path=path, head=head, branch=branch))
+            path = None
+            head = ""
+            branch = None
+
         for line in self.run("worktree", "list", "--porcelain").stdout.splitlines():
-            if line.startswith("branch refs/heads/"):
-                branches.add(line.removeprefix("branch refs/heads/"))
-        return branches
+            if not line:
+                flush()
+            elif line.startswith("worktree "):
+                path = Path(line.removeprefix("worktree "))
+            elif line.startswith("HEAD "):
+                head = line.removeprefix("HEAD ")
+            elif line.startswith("branch refs/heads/"):
+                branch = line.removeprefix("branch refs/heads/")
+            elif line == "detached":
+                branch = None
+        flush()
+        return items
+
+    def worktree_for_branch(self, branch: str) -> WorktreeInfo | None:
+        for item in self.list_worktrees():
+            if item.branch == branch:
+                return item
+        return None
+
+    def reset_hard(self, commit: str, *, cwd: Path) -> None:
+        self.run("reset", "--hard", "--quiet", commit, cwd=cwd)
+
+    def config_get(self, key: str) -> str | None:
+        try:
+            completed = subprocess.run(
+                [*self._git_prefix(), "config", "--get", key],
+                cwd=self.root,
+                env=self._environment(),
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise GitOperationError(f"Git command could not run: {exc}") from exc
+        if completed.returncode == 1:
+            return None
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise GitOperationError(f"git config failed: {detail}")
+        value = completed.stdout.strip()
+        return value or None
+
+    def ensure_local_identity(self) -> None:
+        if self.config_get("user.name") is None:
+            self.run("config", "user.name", "self-nomad")
+        if self.config_get("user.email") is None:
+            self.run("config", "user.email", "self-nomad@localhost")
+
+    def applied_log(self, *, limit: int = 20) -> list[AppliedLogEntry]:
+        output = self.run(
+            "log",
+            f"--max-count={limit}",
+            "--fixed-strings",
+            "--grep=self-nomad(audit):",
+            "--format=%H%x09%s",
+        ).stdout
+        entries: list[AppliedLogEntry] = []
+        for line in output.splitlines():
+            commit, sep, subject = line.partition("\t")
+            if sep:
+                entries.append(AppliedLogEntry(commit=commit, subject=subject))
+        return entries
 
     def update_ref(self, branch: str, new: str, expected_old: str) -> None:
         self.run("update-ref", f"refs/heads/{branch}", new, expected_old)

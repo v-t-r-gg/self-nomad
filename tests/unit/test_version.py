@@ -45,3 +45,4 @@ def test_source_tree_fallback_sentinel_is_unknown() -> None:
     source = (ROOT / "src/self_nomad/__init__.py").read_text(encoding="utf-8")
     assert '"0+unknown"' in source
     assert "0.1.0rc1" not in source
+    assert project_version() not in source

@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from self_nomad.application import SelfNomad
 from self_nomad.cli import app
 from self_nomad.filesystem import sha256_file
-from tests.helpers import configure_git_identity, run_git
+from tests.helpers import ensure_initial_commit, run_git
 
 runner = CliRunner()
 
@@ -26,9 +26,7 @@ def test_cli_intake_preview_submit_review_validate_approve_apply(
 ) -> None:
     instance = SelfNomad.initialize(tmp_path / "agent", name="cli-intake")
     root = instance.repository.root
-    configure_git_identity(root)
-    run_git(root, "add", ".")
-    run_git(root, "commit", "-m", "initial")
+    ensure_initial_commit(root)
     before = sha256_file(root / "memory/MEMORY.md")
     content = "# Memory\r\n\r\n- Prefers concise status reports.\r\n"
     payload = {
@@ -99,7 +97,6 @@ def test_cli_intake_preview_submit_review_validate_approve_apply(
     )
     assert approved["result"]["status"] == "approved"  # type: ignore[index]
 
-    run_git(root, "switch", "-c", "review-work")
     applied = _json_invoke(["--repo", str(root), "--json", "apply", str(proposal_id)])
     assert applied["result"]["status"] == "applied"  # type: ignore[index]
 

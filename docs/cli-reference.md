@@ -12,9 +12,65 @@ Global options apply to all commands:
 
 Entry points: `self-nomad` (core), `self-nomad-mcp` (optional MCP extra).
 
+Human output uses Rich panels and, on a color TTY (or `SELF_NOMAD_BANNER=1`),
+the self-nomad wordmark on help, `about`, and `init`. `--json` is unchanged.
+`NO_COLOR` and `SELF_NOMAD_BANNER=0` suppress the mark.
+
 ---
 
 ## Repository management
+
+### `self-nomad about`
+
+| | |
+| --- | --- |
+| Purpose | Print the wordmark, version, and what this tool is not |
+| Mutation | None |
+| JSON | Yes (`name`, `version`, `tagline`) |
+
+```bash
+self-nomad about
+```
+
+---
+
+### `self-nomad pack`
+
+| | |
+| --- | --- |
+| Purpose | Write a history-free snapshot, or verify one with `--check` |
+| Mutation | Writes `--out` (pack). `--check` is read-only |
+| Arguments | `--out`, `--profile specialist\|personal` (default specialist), `--include-long-term-memory`, `--check PATH` |
+| JSON | Yes |
+
+Specialist packs omit `user_profile` and daily memory. Long-term memory is
+omitted unless `--include-long-term-memory`. The archive is gzip tar, not a
+Git clone. Sidecar `self-nomad.pack.json` is additive and does not change
+repository schema 1.
+
+```bash
+self-nomad --repo ./agent pack --out ./agent.snpack
+self-nomad pack --check ./agent.snpack
+```
+
+### `self-nomad install`
+
+| | |
+| --- | --- |
+| Purpose | Extract a pack into a **new** local repository after validation |
+| Mutation | Creates destination tree; optional Git commit |
+| Arguments | `ARCHIVE`, `--to` (required), `--git` / `--no-git` |
+| JSON | Yes (`repository`, `content_digest`, `summary`) |
+
+Destination must be missing or empty. The pack is extracted to a staging
+directory and validated (`--strict`, digest check, no `.git`, no links)
+**before** anything is written to `--to`.
+
+```bash
+self-nomad install ./agent.snpack --to ./local-copy
+```
+
+---
 
 ### `self-nomad init`
 
@@ -57,6 +113,25 @@ self-nomad --repo ./agent validate PROPOSAL_ID
 
 ## Proposal management
 
+### `self-nomad proposals`
+
+| | |
+| --- | --- |
+| Purpose | List local proposal records, newest first |
+| Mutation | None |
+| JSON | Yes (`proposals`: id, status, reason, risk, target_branch) |
+
+### `self-nomad log`
+
+| | |
+| --- | --- |
+| Purpose | Applied proposal commits from Git (`self-nomad(audit):` subjects) |
+| Mutation | None |
+| Arguments | `--limit` (default 20) |
+| JSON | Yes (`commits`: commit, subject) |
+
+History comes from the repository Git log, not platform proposal state.
+
 ### `self-nomad propose`
 
 | | |
@@ -73,9 +148,14 @@ Change documents list `add` / `replace` / `delete` operations with
 
 | | |
 | --- | --- |
-| Purpose | Show proposal provenance, operations, and state |
-| Mutation | None |
-| Arguments | `proposal_id` |
+| Purpose | Show proposal provenance, operations, unified diff, and state |
+| Mutation | None unless `--interactive` (approve or reject only; never apply) |
+| Arguments | `proposal_id`, `--interactive`, `--identifier` |
+| JSON | Yes (record plus `unified_diff` when the proposal is materialized) |
+
+`--interactive` cannot be combined with `--json`. Approve records an
+identifier and does not apply. Materialized proposals are validated before
+approval. Applied / rejected / stale / failed proposals are display-only.
 
 ### `self-nomad approve`
 
@@ -96,7 +176,9 @@ Does not authenticate the identifier.
 | Mutation | `approved → applied` (or stale on conflict) |
 | Arguments | `proposal_id` |
 
-**Requires the target branch not checked out in any worktree.**
+Compare-and-swap on the target ref. A **clean** checked-out worktree is
+refreshed to the applied commit. A **dirty** worktree is refused
+([ADR 0008](decisions/0008-apply-checked-out-worktree.md)).
 
 ### `self-nomad reject`
 

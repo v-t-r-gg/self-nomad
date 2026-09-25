@@ -15,9 +15,15 @@ uv run mypy
 uv run python scripts/export_proposal_request_schema.py --check
 uv run python scripts/check_docs.py
 uv run pytest --cov=self_nomad --cov-report=term-missing
-uv build
+uv run python scripts/build_release.py
 uv run python scripts/release_smoke.py
 uv run python scripts/mcp_smoke.py
+```
+
+Release-candidate extra (network; installed wheel operator loop):
+
+```bash
+uv run python scripts/operator_acceptance.py
 ```
 
 | Step | Purpose |
@@ -28,9 +34,10 @@ uv run python scripts/mcp_smoke.py
 | `export_proposal_request_schema.py --check` | Packaged schema matches models |
 | `check_docs.py` | Links, CLI names, MCP tool names, schema parity, examples |
 | `pytest --cov` | Full suite with coverage floor |
-| `uv build` | Wheel + sdist under `dist/` |
+| `build_release.py` | Clean dist, wheel + sdist, `SHA256SUMS` |
 | `release_smoke.py` | Base install without MCP extra |
 | `mcp_smoke.py` | Install with `[mcp]`; stdio tool list + status + schema |
+| `operator_acceptance.py` | Installed-wheel operator loop and schema upgrade fixture (release extra) |
 
 CI runs the test matrix on Ubuntu (Python 3.11–3.13) and compatibility jobs on
 macOS and Windows (Python 3.13), plus a dedicated distribution job.
@@ -59,7 +66,8 @@ repository from product code.
 Layout:
 
 - `tests/unit/` — helpers, manifests, packaging, MCP surface
-- `tests/integration/` — adapters, proposals, MCP in-process/stdio
+- `tests/adapters/` — RuntimeAdapter contract (including the kit sample)
+- `tests/integration/` — adapters, proposals, snapshots, MCP in-process/stdio
 - `tests/e2e/` — CLI
 - `scripts/release_smoke.py` / `scripts/mcp_smoke.py` — installed artifacts
 

@@ -18,16 +18,15 @@ Causes: target branch moved, worktree dirtied after validation/approval, content
 digest mismatch. Create a new proposal from the current tip; stale proposals are
 not auto-merged.
 
-## Target branch is checked out
+## Target worktree is dirty
 
 ```text
-apply refused: target branch is checked out in a worktree
+target worktree is dirty; commit, stash, or discard local changes before apply
 ```
 
-```bash
-git -C REPO switch -c review-work
-# or detach HEAD, then retry apply
-```
+Apply refreshes a **clean** checked-out branch. Commit, stash, or discard
+local edits, then retry. A worktree that is not on the target branch is left
+alone; only the ref moves.
 
 ## Intake ID conflict
 

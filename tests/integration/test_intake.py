@@ -34,10 +34,9 @@ def git(root: Path, *args: str) -> str:
 
 def committed_repository(tmp_path: Path) -> SelfNomad:
     app = SelfNomad.initialize(tmp_path / "agent", name="intake-agent")
-    git(app.repository.root, "config", "user.name", "Test User")
-    git(app.repository.root, "config", "user.email", "test@example.invalid")
-    git(app.repository.root, "add", ".")
-    git(app.repository.root, "commit", "-m", "initial")
+    from tests.helpers import ensure_initial_commit
+
+    ensure_initial_commit(app.repository.root)
     return app
 
 

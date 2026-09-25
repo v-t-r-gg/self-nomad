@@ -67,3 +67,19 @@ def configure_git_identity(
 ) -> None:
     run_git(root, "config", "user.name", name)
     run_git(root, "config", "user.email", email)
+
+
+def ensure_initial_commit(root: Path) -> None:
+    """Configure identity and create HEAD only when initialize did not commit."""
+    configure_git_identity(root)
+    probe = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode == 0:
+        return
+    run_git(root, "add", ".")
+    run_git(root, "commit", "-m", "initial")

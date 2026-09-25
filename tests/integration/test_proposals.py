@@ -7,6 +7,7 @@ from self_nomad.application import SelfNomad
 from self_nomad.domain import FileOperation, ProposalStatus
 from self_nomad.errors import ConflictError, ProposalStaleError
 from self_nomad.filesystem import sha256_file
+from tests.helpers import ensure_initial_commit
 
 
 def git(root: Path, *args: str) -> str:
@@ -17,10 +18,7 @@ def git(root: Path, *args: str) -> str:
 
 def committed_repository(tmp_path: Path) -> SelfNomad:
     app = SelfNomad.initialize(tmp_path / "agent", name="example")
-    git(app.repository.root, "config", "user.name", "Test User")
-    git(app.repository.root, "config", "user.email", "test@example.invalid")
-    git(app.repository.root, "add", ".")
-    git(app.repository.root, "commit", "-m", "initial")
+    ensure_initial_commit(app.repository.root)
     return app
 
 
@@ -41,6 +39,9 @@ def test_proposal_is_isolated_then_applies_with_audit(tmp_path: Path) -> None:
 
     assert record.status is ProposalStatus.MATERIALIZED
     assert record.proposal.risk == "low"
+    diff = service.unified_diff(record.proposal.id)
+    assert "memory/MEMORY.md" in diff
+    assert "Portable fact." in diff
     assert git(root, "rev-parse", "HEAD") == original_head
     assert (root / "memory/MEMORY.md").read_text() == "# Memory\n"
     proposed_memory = Path(record.worktree or "").joinpath("memory/MEMORY.md")
@@ -151,7 +152,31 @@ def test_invalid_utf8_content_is_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_apply_refuses_checked_out_target_branch(tmp_path: Path) -> None:
+def test_apply_on_clean_checked_out_target_updates_worktree(tmp_path: Path) -> None:
+    app = committed_repository(tmp_path)
+    root = app.repository.root
+    source = tmp_path / "memory.md"
+    source.write_text("# Memory\n\nchanged\n", encoding="utf-8")
+    service = app.proposals(state_root=tmp_path / "state")
+    record = service.create(
+        reason="Change memory",
+        operations=[
+            FileOperation(kind="replace", path="memory/MEMORY.md", content_source=str(source))
+        ],
+    )
+    service.validate(record.proposal.id)
+    service.approve(record.proposal.id)
+    assert git(root, "symbolic-ref", "--short", "HEAD") == "main"
+    applied = service.apply(record.proposal.id)
+    assert applied.status is ProposalStatus.APPLIED
+    assert (root / "memory/MEMORY.md").read_text(encoding="utf-8") == source.read_text(
+        encoding="utf-8"
+    )
+    assert git(root, "rev-parse", "HEAD") == applied.applied_commit
+    assert not git(root, "status", "--porcelain")
+
+
+def test_apply_refuses_dirty_checked_out_target(tmp_path: Path) -> None:
     app = committed_repository(tmp_path)
     source = tmp_path / "memory.md"
     source.write_text("changed", encoding="utf-8")
@@ -164,9 +189,10 @@ def test_apply_refuses_checked_out_target_branch(tmp_path: Path) -> None:
     )
     service.validate(record.proposal.id)
     service.approve(record.proposal.id)
-    with pytest.raises(ConflictError, match="checked out"):
+    (app.repository.root / "scratch.txt").write_text("dirty", encoding="utf-8")
+    with pytest.raises(ConflictError, match="dirty"):
         service.apply(record.proposal.id)
-    assert not git(app.repository.root, "status", "--porcelain")
+    assert git(app.repository.root, "rev-parse", "HEAD") == record.proposal.base_commit
 
 
 @pytest.mark.parametrize("mutation", ["untracked", "unstaged", "staged"])

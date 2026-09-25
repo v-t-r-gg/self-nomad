@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from self_nomad.domain import ProposalRecord, TransferPlan
     from self_nomad.intake import IntakeService
     from self_nomad.proposals import ProposalService
+    from self_nomad.snapshot import PackSummary, SnapshotService
 
 
 class SelfNomad:
@@ -33,6 +34,53 @@ class SelfNomad:
         from self_nomad.intake import IntakeService
 
         return IntakeService(self.repository, state_root=state_root)
+
+    def snapshots(self) -> "SnapshotService":
+        from self_nomad.snapshot import SnapshotService
+
+        return SnapshotService(self.repository)
+
+    def pack(
+        self,
+        destination: Path,
+        *,
+        profile: str = "specialist",
+        include_long_term_memory: bool = False,
+    ) -> "PackSummary":
+        if profile == "specialist":
+            return self.snapshots().pack(
+                destination,
+                profile="specialist",
+                include_long_term_memory=include_long_term_memory,
+            )
+        if profile == "personal":
+            return self.snapshots().pack(
+                destination,
+                profile="personal",
+                include_long_term_memory=include_long_term_memory,
+            )
+        raise ConflictError("profile must be specialist or personal")
+
+    @staticmethod
+    def check_pack(archive: Path) -> "PackSummary":
+        from self_nomad.snapshot.service import check_pack
+
+        return check_pack(archive)
+
+    @classmethod
+    def install_pack(
+        cls,
+        archive: Path,
+        destination: Path,
+        *,
+        initialize_git: bool = True,
+    ) -> tuple["SelfNomad", "PackSummary"]:
+        from self_nomad.snapshot.service import install_pack
+
+        repository, summary = install_pack(
+            archive, destination, initialize_git=initialize_git
+        )
+        return cls(repository), summary
 
     def create_import_proposal(
         self,
@@ -117,4 +165,9 @@ class SelfNomad:
                 timeout=15,
                 env=environment,
             )
+            from self_nomad.git import GitBackend
+
+            backend = GitBackend(path)
+            backend.ensure_local_identity()
+            backend.commit_all(path, "self-nomad: initial self repository")
         return cls(SelfRepository(path))

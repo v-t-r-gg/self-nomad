@@ -1,0 +1,19 @@
+schema_version: 1
+
+approval:
+  default: required
+  protected_paths:
+    - "self-nomad.yaml"
+    - "policy/**"
+    - "identity/instructions.md"
+    - "identity/persona.md"
+
+limits:
+  maximum_file_bytes: 1048576
+  maximum_proposal_files: 100
+
+validation:
+  strict_schema: true
+  reject_symlinks: true
+  scan_for_secrets: true
+  execute_repository_tests: false

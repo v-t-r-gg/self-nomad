@@ -262,18 +262,25 @@ def smoke_artifact(artifact: Path, work_root: Path) -> None:
         capture_output=True,
         env=env,
     )
-    subprocess.run(
-        ["git", "-C", str(repo), "add", "."],
-        check=True,
+    head = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"],
+        check=False,
         capture_output=True,
         env=env,
     )
-    subprocess.run(
-        ["git", "-C", str(repo), "commit", "-m", "initial"],
-        check=True,
-        capture_output=True,
-        env=env,
-    )
+    if head.returncode != 0:
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."],
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "initial"],
+            check=True,
+            capture_output=True,
+            env=env,
+        )
 
     # Prove base import does not require using MCP; optional dep is present though.
     run(

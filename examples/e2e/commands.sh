@@ -23,9 +23,9 @@ uv run self-nomad --repo "$REPO" review "$PROPOSAL_ID"
 uv run self-nomad --repo "$REPO" validate "$PROPOSAL_ID"
 uv run self-nomad --repo "$REPO" approve "$PROPOSAL_ID" --identifier operator
 
-# Checked-out-target rule
-git -C "$REPO" switch -c review-work
 uv run self-nomad --repo "$REPO" apply "$PROPOSAL_ID"
+uv run self-nomad --repo "$REPO" proposals
+uv run self-nomad --repo "$REPO" log
 
 git -C "$REPO" log --oneline -3
 echo "e2e complete proposal_id=$PROPOSAL_ID"

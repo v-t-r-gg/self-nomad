@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import tomllib
 from pathlib import Path
 from uuid import uuid4
 
@@ -35,16 +36,14 @@ from self_nomad.mcp_server.tools import (
     call_tool,
     envelope,
 )
-from tests.helpers import configure_git_identity, run_git
+from tests.helpers import ensure_initial_commit
 
 pytest.importorskip("mcp")
 
 
 def _repo(tmp_path: Path) -> SelfNomad:
     app = SelfNomad.initialize(tmp_path / "agent", name="mcp-unit")
-    configure_git_identity(app.repository.root)
-    run_git(app.repository.root, "add", ".")
-    run_git(app.repository.root, "commit", "-m", "initial")
+    ensure_initial_commit(app.repository.root)
     return app
 
 
@@ -68,10 +67,14 @@ def test_expected_tool_names_are_closed_and_ordered() -> None:
 
 
 def test_no_development_version_literal_in_mcp_server() -> None:
+    project = tomllib.loads(
+        (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    version = str(project["project"]["version"])
     root = Path(__file__).resolve().parents[2] / "src" / "self_nomad" / "mcp_server"
     for path in root.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
-        assert "0.2.0.dev0" not in text, f"version literal in {path}"
+        assert version not in text, f"version literal in {path}"
 
 
 def test_status_does_not_create_state_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

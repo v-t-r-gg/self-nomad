@@ -87,3 +87,8 @@ the platform configuration directory — never in the portable manifest.
 
 Repository schema version **1** is current. Unsupported versions raise load
 errors. Bumping the schema requires an explicit product decision and ADR.
+Shareable snapshots versus a personal working tree are defined in
+[ADR 0007](decisions/0007-publishable-package-profile.md); schema 1 does not
+grow license, author, or package-version fields without that kind of decision.
+`self-nomad pack` writes an additive `self-nomad.pack.json` sidecar inside the
+archive; it is not part of the repository schema.

@@ -16,10 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_MODULES = (
     "self_nomad/__init__.py",
     "self_nomad/cli.py",
+    "self_nomad/branding.py",
+    "self_nomad/render.py",
     "self_nomad/application.py",
     "self_nomad/py.typed",
     "self_nomad/adapters/hermes.py",
     "self_nomad/adapters/openclaw.py",
+    "self_nomad/adapters/kit.py",
+    "self_nomad/adapters/example.py",
     "self_nomad/proposals/service.py",
     "self_nomad/repository/self_repository.py",
 )
@@ -37,15 +41,21 @@ def test_package_modules_exist() -> None:
         assert (ROOT / "src" / relative).is_file(), relative
 
 
+def _project_version() -> str:
+    import tomllib
+
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(data["project"]["version"])
+
+
 def _find_artifacts() -> tuple[Path | None, Path | None]:
     dist = ROOT / "dist"
     if not dist.is_dir():
         return None, None
-    wheels = sorted(dist.glob("self_nomad-*.whl"))
-    sdists = sorted(dist.glob("self_nomad-*.tar.gz"))
-    wheel = wheels[-1] if wheels else None
-    sdist = sdists[-1] if sdists else None
-    return wheel, sdist
+    version = _project_version()
+    wheel = dist / f"self_nomad-{version}-py3-none-any.whl"
+    sdist = dist / f"self_nomad-{version}.tar.gz"
+    return (wheel if wheel.is_file() else None, sdist if sdist.is_file() else None)
 
 
 @pytest.mark.skipif(_find_artifacts()[0] is None, reason="no wheel in dist/; run uv build first")

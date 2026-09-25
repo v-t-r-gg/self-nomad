@@ -1,9 +1,11 @@
 # Getting started
 
 One coherent operator journey from an empty directory to an applied proposal.
-Commands use temporary paths; substitute absolute paths on your machine.
-Windows PowerShell users should swap path separators and use
-`.venv\Scripts\activate` when working from source.
+Human commands print Rich panels and, on a color TTY, the wordmark. Add
+`--json` when a script needs the frozen envelope. Commands use temporary
+paths; substitute absolute paths on your machine. Windows PowerShell users
+should swap path separators and use `.venv\Scripts\activate` when working
+from source.
 
 ## Prerequisites
 
@@ -15,6 +17,7 @@ Windows PowerShell users should swap path separators and use
 # from a development checkout
 uv sync --extra dev
 uv run self-nomad --version
+uv run self-nomad about
 ```
 
 ## 1. Initialize a self repository
@@ -93,6 +96,8 @@ branch and worktree under private platform state.
 
 ```bash
 uv run self-nomad --repo /tmp/agent-self review PROPOSAL_ID
+# optional: approve or reject from the review (does not apply)
+# uv run self-nomad --repo /tmp/agent-self review PROPOSAL_ID --interactive
 uv run self-nomad --repo /tmp/agent-self validate PROPOSAL_ID
 ```
 
@@ -115,17 +120,7 @@ validated → approved
 self-nomad records `approval_identifier`; it does **not** authenticate the
 caller. Any later tree drift marks the proposal **stale**.
 
-## 8. Detach the target branch
-
-**Apply refuses a target branch checked out in any worktree.** Switch away
-first:
-
-```bash
-git -C /tmp/agent-self switch -c review-work
-# or: git -C /tmp/agent-self switch --detach
-```
-
-## 9. Apply
+## 8. Apply
 
 ```bash
 uv run self-nomad --repo /tmp/agent-self apply PROPOSAL_ID
@@ -135,10 +130,18 @@ uv run self-nomad --repo /tmp/agent-self apply PROPOSAL_ID
 approved → applied
 ```
 
-Uses `git update-ref` with the expected old tip. A moved target becomes stale;
-there is no implicit merge.
+Uses `git update-ref` with the expected old tip. If `main` is checked out and
+clean, the worktree is refreshed to the applied commit. A dirty worktree is
+refused. A moved target becomes stale; there is no implicit merge.
 
-## 10. Inspect audit and history
+List local proposals or applied Git history:
+
+```bash
+uv run self-nomad --repo /tmp/agent-self proposals
+uv run self-nomad --repo /tmp/agent-self log
+```
+
+## 9. Inspect audit and history
 
 ```bash
 git -C /tmp/agent-self log --oneline -5
@@ -174,6 +177,23 @@ uv run self-nomad --repo /tmp/agent-self --json intake --request request.json --
 ```
 
 See [agent-intake.md](agent-intake.md) and [examples/e2e/](../examples/e2e/).
+
+## Export a shareable snapshot
+
+```bash
+uv run self-nomad --repo /tmp/agent-self pack --out /tmp/agent-self.snpack
+uv run self-nomad pack --check /tmp/agent-self.snpack
+```
+
+This is a validated tree, not a Git clone. Specialist profile (default) omits
+the user profile and daily memory.
+
+Install the pack on another machine:
+
+```bash
+uv run self-nomad install /tmp/agent-self.snpack --to /tmp/agent-copy
+uv run self-nomad --repo /tmp/agent-copy validate --strict
+```
 
 ## Next
 
