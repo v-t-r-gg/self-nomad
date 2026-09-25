@@ -23,7 +23,7 @@ branch advancement under operator control.
 
 ## Development status
 
-**Version `1.4.0`**. Schema 1 and the 1.0 contracts stay frozen. Tag `v1.3.0` remains the workspace-adapter release. The deterministic core supports:
+**Version `1.4.1`**. Schema 1 and the 1.0 contracts stay frozen. Tag `v1.4.0` remains the GUI and hub release. The deterministic core supports:
 
 - Repository init and structural validation
 - Isolated Git proposals (materialize → validate → approve → apply)

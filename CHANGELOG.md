@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-25
+
+### Fixed
+
+- `docs/ecosystem.md` no longer says hub commands live in the registry. self-nomad does not host, search, or authenticate. `hub publish` writes a checked `.snpack` for a human pull request. `hub pull` runs `pack --check`, then `install`. The registry stores files and `index.json` and has no upload API.
+- `hub pull` joins a relative pack path in an `https` index to that index URL's directory, the same way `file://` does. `..` is refused. `pack --check` still runs before install.
+
 ## [1.4.0] - 2026-09-25
 
 ### Added
@@ -199,7 +206,8 @@ First public release candidate of the safety-hardened deterministic core.
   the displayed class of mutation only.
 - Compact local-state layout is not migrated from pre-RC development checkouts.
 
-[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.4.1
 [1.4.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.4.0
 [1.3.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.3.0
 [1.2.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.2.0
