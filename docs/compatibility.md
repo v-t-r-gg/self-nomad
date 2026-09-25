@@ -45,7 +45,7 @@ schema_version, command, ok, result, warnings, errors
 
 ## Adapters
 
-- Built-in: `hermes`, `openclaw`.
+- Built-in: `hermes`, `openclaw`, `agents-md`, `claude-code`.
 - `example-files` is a kit sample and is not registered.
 - Plans must list unmapped classes instead of dropping them.
 - Adapters do not run Git and do not approve proposals.

@@ -23,7 +23,7 @@ branch advancement under operator control.
 
 ## Development status
 
-**Version `1.3.0`**. Schema 1 and the 1.0 contracts stay frozen. Tag `v1.2.0` is the TUI release. The deterministic core supports:
+**Version `1.3.0`**. Schema 1 and the 1.0 contracts stay frozen. Tag `v1.2.0` remains the TUI-only release. The deterministic core supports:
 
 - Repository init and structural validation
 - Isolated Git proposals (materialize → validate → approve → apply)
