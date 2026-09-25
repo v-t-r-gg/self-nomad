@@ -1,0 +1,3 @@
+# Agents
+
+Cursor workspace instructions.

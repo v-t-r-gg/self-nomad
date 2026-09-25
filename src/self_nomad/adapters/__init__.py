@@ -5,11 +5,20 @@ from self_nomad.adapters.example import ExampleFilesAdapter
 from self_nomad.adapters.hermes import HermesAdapter
 from self_nomad.adapters.openclaw import OpenClawAdapter
 from self_nomad.adapters.registry import AdapterRegistry
+from self_nomad.adapters.workspace_wrappers import CodexAdapter, CopilotAdapter, CursorAdapter
 
 
 def default_registry() -> AdapterRegistry:
     return AdapterRegistry(
-        [HermesAdapter(), OpenClawAdapter(), AgentsMdAdapter(), ClaudeCodeAdapter()]
+        [
+            HermesAdapter(),
+            OpenClawAdapter(),
+            AgentsMdAdapter(),
+            ClaudeCodeAdapter(),
+            CodexAdapter(),
+            CursorAdapter(),
+            CopilotAdapter(),
+        ]
     )
 
 
@@ -17,6 +26,9 @@ __all__ = [
     "AdapterRegistry",
     "AgentsMdAdapter",
     "ClaudeCodeAdapter",
+    "CodexAdapter",
+    "CopilotAdapter",
+    "CursorAdapter",
     "ExampleFilesAdapter",
     "HermesAdapter",
     "OpenClawAdapter",

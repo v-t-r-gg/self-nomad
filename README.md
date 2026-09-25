@@ -23,13 +23,13 @@ branch advancement under operator control.
 
 ## Development status
 
-**Version `1.3.0`**. Schema 1 and the 1.0 contracts stay frozen. Tag `v1.2.0` remains the TUI-only release. The deterministic core supports:
+**Version `1.4.0`** (not tagged yet). Schema 1 and the 1.0 contracts stay frozen. Tag `v1.3.0` is the workspace-adapter release. The deterministic core supports:
 
 - Repository init and structural validation
 - Isolated Git proposals (materialize → validate → approve → apply)
 - Agent intake (`ProposalRequest` v1) with idempotent receipts
 - Optional local stdio **MCP** surface for inspection and intake (no approve/apply)
-- Hermes, OpenClaw, `agents-md`, and `claude-code` adapters (detect / import / restore), plus an
+- Hermes, OpenClaw, `agents-md`, `claude-code`, and thin `codex` / `cursor` / `copilot` wrappers, plus an
   unregistered authoring-kit sample (`example-files`)
 
 Supported Python: **3.11, 3.12, 3.13**. CI exercises Ubuntu (3.11–3.13) plus

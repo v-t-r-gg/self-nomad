@@ -108,6 +108,14 @@ self-nomad --repo ./agent detect --adapter claude-code --path ./workspace
 self-nomad --repo ./agent import --adapter claude-code --from ./workspace
 ```
 
+## codex, cursor, copilot
+
+These are thin wrappers over `agents-md`, not separate mapping tables.
+
+- `codex` also detects `.codex/`. `auth.json` is excluded. No extra instruction file.
+- `cursor` also detects `.cursor/rules/`. Each `*.mdc` is listed lossy and is not merged into instructions. `auth.json` and `mcp.json` are excluded.
+- `copilot` detects `.github/copilot-instructions.md`. That file is the adapted instruction source only when `AGENTS.md` is absent. If both exist, `AGENTS.md` wins and the copilot file is listed unmerged. Token files stay excluded.
+
 ## Hermes
 
 **Detection roots:** `$HERMES_HOME` or `~/.hermes`, plus `profiles/*` children

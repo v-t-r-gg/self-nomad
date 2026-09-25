@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Thin workspace wrappers `codex`, `cursor`, and `copilot`. They compose `agents-md`. Cursor rules and a copilot instruction file are not merged into `AGENTS.md`. Codex `auth.json` and Cursor `mcp.json` stay excluded.
+
 ## [1.3.0] - 2026-09-25
 
 ### Added

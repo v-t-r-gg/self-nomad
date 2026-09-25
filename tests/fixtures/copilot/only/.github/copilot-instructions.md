@@ -1,0 +1,3 @@
+# Copilot
+
+Fallback instructions only.
