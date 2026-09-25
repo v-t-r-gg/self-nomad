@@ -74,6 +74,20 @@ def test_publish_file_drop_passes_check(tmp_path: Path) -> None:
     assert drop.is_file()
 
 
+class _Body:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def read(self) -> bytes:
+        return self._payload
+
+    def __enter__(self) -> _Body:
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+
 def test_pull_by_index_name(tmp_path: Path) -> None:
     root = _repo(tmp_path)
     archive = tmp_path / "named.snpack"
@@ -87,3 +101,73 @@ def test_pull_by_index_name(tmp_path: Path) -> None:
     summary = pull_pack("demo", destination, index_url=index.as_uri())
     assert summary.profile == "specialist"
     assert (destination / "self-nomad.yaml").is_file()
+
+
+def test_file_index_resolves_relative_pack_and_refuses_parent(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    archive = tmp_path / "packages" / "demo.snpack"
+    archive.parent.mkdir()
+    SelfNomad.open(root).pack(archive, profile="specialist")
+    index = tmp_path / "index.json"
+    index.write_text(
+        json.dumps({"packages": [{"name": "demo", "pack": "packages/demo.snpack"}]}),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "from-relative"
+    summary = pull_pack("demo", destination, index_url=index.as_uri())
+    assert not (destination / "identity" / "user.md").exists()
+    assert summary.profile == "specialist"
+
+    index.write_text(
+        json.dumps({"packages": [{"name": "demo", "pack": "../packages/demo.snpack"}]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(PackError, match="escapes"):
+        pull_pack("demo", tmp_path / "escaped", index_url=index.as_uri())
+    assert not (tmp_path / "escaped").exists()
+
+
+def test_https_index_resolves_relative_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _repo(tmp_path)
+    archive = tmp_path / "named.snpack"
+    SelfNomad.open(root).pack(archive, profile="specialist")
+    index_url = "https://example.test/registry/index.json"
+    pack_url = "https://example.test/registry/packages/demo/1.0.0/demo.snpack"
+    index = json.dumps(
+        {"packages": [{"name": "demo", "pack": "packages/demo/1.0.0/demo.snpack"}]}
+    ).encode()
+    seen: list[str] = []
+
+    def fake_urlopen(url: str, timeout: int = 60) -> _Body:
+        seen.append(url)
+        if url == index_url:
+            return _Body(index)
+        if url == pack_url:
+            return _Body(archive.read_bytes())
+        raise AssertionError(url)
+
+    monkeypatch.setattr("self_nomad.hub.client.urlopen", fake_urlopen)
+    destination = tmp_path / "from-https"
+    summary = pull_pack("demo", destination, index_url=index_url)
+    assert seen == [index_url, pack_url]
+    assert summary.profile == "specialist"
+    assert not (destination / "identity" / "user.md").exists()
+
+
+def test_https_index_refuses_parent_without_fetching_pack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index_url = "https://example.test/registry/index.json"
+    index = json.dumps({"packages": [{"name": "demo", "pack": "../demo.snpack"}]}).encode()
+
+    def fake_urlopen(url: str, timeout: int = 60) -> _Body:
+        if url == index_url:
+            return _Body(index)
+        raise AssertionError(url)
+
+    monkeypatch.setattr("self_nomad.hub.client.urlopen", fake_urlopen)
+    with pytest.raises(PackError, match="escapes"):
+        pull_pack("demo", tmp_path / "nope", index_url=index_url)
+    assert not (tmp_path / "nope").exists()

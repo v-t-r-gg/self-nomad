@@ -43,7 +43,7 @@ self-nomad about
 | Arguments | `pull SOURCE --to DIR`, `publish --drop FILE --profile specialist`, `--yes-personal` for a personal pack |
 | JSON | Yes, when global `--json` is set |
 
-`publish` does not upload. A person commits the dropped file in the registry repository. See the ADR 0007 addendum.
+`publish` does not upload. A person commits the dropped file in the registry repository. See the ADR 0007 addendum. When `SOURCE` is an index name, a relative pack path is resolved next to that index. An `https` index uses the index URL's directory. `..` is refused.
 
 ```bash
 self-nomad hub pull ./agent.snpack --to ./from-pack

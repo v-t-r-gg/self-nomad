@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from pathlib import Path
-from urllib.parse import unquote, urlparse
+from pathlib import Path, PurePosixPath
+from urllib.parse import unquote, urljoin, urlparse
 from urllib.request import urlopen
 
 from self_nomad.application import SelfNomad
@@ -80,19 +80,59 @@ def _pack_from_index(index_url: str, name: str) -> Path:
             break
         if pack.startswith(("https://", "http://", "file:")):
             return _download(pack)
+        if _pack_ref_escapes(pack):
+            raise PackError("pack path escapes the index")
         candidate = Path(pack)
-        if not candidate.is_file():
-            candidate = _index_dir(index_url) / pack
         if candidate.is_file():
             return candidate
+        if index_url.startswith(("https://", "http://")):
+            return _download(_join_index_url(index_url, pack))
+        located = _under_index_dir(index_url, pack)
+        if located is not None:
+            return located
         break
     raise PackError(f"index has no package named {name}")
+
+
+def _pack_ref_escapes(pack: str) -> bool:
+    """True when a relative index entry could leave the index directory."""
+    normalized = pack.replace("\\", "/")
+    if normalized.startswith("//"):
+        return True
+    return ".." in PurePosixPath(normalized).parts
+
+
+def _join_index_url(index_url: str, pack: str) -> str:
+    """Join a relative pack path to the directory that contains the index."""
+    base = index_url if index_url.endswith("/") else index_url.rsplit("/", 1)[0] + "/"
+    joined = urljoin(base, pack.replace("\\", "/"))
+    base_parts = urlparse(base)
+    joined_parts = urlparse(joined)
+    base_path = base_parts.path if base_parts.path.endswith("/") else base_parts.path + "/"
+    joined_path = unquote(joined_parts.path)
+    same_origin = (
+        joined_parts.scheme in {"https", "http"}
+        and joined_parts.netloc == base_parts.netloc
+        and joined_path.startswith(base_path)
+        and ".." not in PurePosixPath(joined_path).parts
+    )
+    if not same_origin:
+        raise PackError("pack path escapes the index")
+    return joined
 
 
 def _index_dir(index_url: str) -> Path:
     if index_url.startswith("file:"):
         return _file_url_path(index_url).parent
     return Path(index_url).parent
+
+
+def _under_index_dir(index_url: str, pack: str) -> Path | None:
+    root = _index_dir(index_url).resolve()
+    candidate = (root / pack).resolve()
+    if candidate.is_file() and candidate.is_relative_to(root):
+        return candidate
+    return None
 
 
 def _download(url: str) -> Path:

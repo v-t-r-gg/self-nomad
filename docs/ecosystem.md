@@ -19,7 +19,7 @@ See [repository-format.md](repository-format.md),
 [compatibility.md](compatibility.md), and
 [mcp.md](mcp.md).
 
-## What a future registry may do
+## What the registry does
 
 The separate product is
 [portable-agent-registry](https://github.com/v-t-r-gg/portable-agent-registry).
@@ -33,11 +33,11 @@ boundary:
 - `self-nomad restore` — copy mapped files into Hermes or OpenClaw
 
 The unit of exchange is the snapshot. Proposal receipts and working Git
-history are not package contents. self-nomad does not host, search, publish,
-or authenticate to that index. Those commands, if built, live in the registry.
-The optional `self-nomad tui` screen and `self-nomad gui` are local skins on
-the same commands. `self-nomad hub` only moves a pack that has already passed
-`pack --check`. It does not search or authenticate.
+history are not package contents. self-nomad does not host, search, or
+authenticate to an index. `hub publish` writes a checked `.snpack` for a
+human pull request. `hub pull` runs `pack --check`, then `install`. The
+registry stores files and `index.json`. It has no upload API. The optional
+`self-nomad tui` and `self-nomad gui` are local skins on the same commands.
 
 Product boundary: [ADR 0007](decisions/0007-publishable-package-profile.md).
 Concept notes (not this product): [docs/future/](future/).

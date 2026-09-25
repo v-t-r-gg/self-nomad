@@ -44,7 +44,7 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | [1.1.0 notes](releases/1.1.0.md) | Pack-contract release notes |
 | [1.0.0 notes](releases/1.0.0.md) | Stable release notes |
 | [ADRs](decisions/) | Historical design decisions |
-| [Ecosystem position](ecosystem.md) | Standalone product vs a future registry |
+| [Ecosystem position](ecosystem.md) | Standalone product vs the pack catalog |
 
 ### MCP host guides
 

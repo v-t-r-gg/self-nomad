@@ -111,7 +111,9 @@ marketplace client and not an MCP tool.
 
 - `hub pull` resolves a `.snpack` path, URL, or index name, runs
   `pack --check`, then `install`. The check is not optional. A failing check
-  does not write the destination.
+  does not write the destination. A relative `pack` path in an `http` or
+  `https` index is joined to that index file's directory, the same way a
+  `file://` index resolves a relative path. `..` is refused.
 - `hub publish` writes a specialist pack (a personal pack requires
   `--yes-personal`), runs `pack --check`, and leaves that file for a human
   to commit under the registry's `packages/` tree. There is no upload API.
