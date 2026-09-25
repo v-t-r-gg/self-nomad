@@ -49,7 +49,8 @@ HISTORICAL_VERSION_ALLOW = {
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 CLI_CMD_RE = re.compile(r"`self-nomad\s+([a-z][a-z0-9-]*)`")
 MCP_TOOL_RE = re.compile(r"`(self_nomad_[a-z_]+)`")
-VERSION_RE = re.compile(r"\b0\.\d+\.\d+(?:\.dev\d+|rc\d+)?\b")
+# 0.x.y only. Do not treat an IPv4 octet run (127.0.0.1) as a version.
+VERSION_RE = re.compile(r"(?<!\d\.)\b0\.\d+\.\d+(?:\.dev\d+|rc\d+)?\b(?!\.\d)")
 
 
 def _iter_doc_files() -> list[Path]:

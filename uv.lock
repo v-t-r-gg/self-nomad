@@ -1260,7 +1260,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.12" },
 ]
-provides-extras = ["mcp", "tui", "dev"]
+provides-extras = ["mcp", "tui", "gui", "hub", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
