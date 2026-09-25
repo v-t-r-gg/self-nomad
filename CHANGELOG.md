@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-25
+
+Patch on the 1.1.0 pack contract. Tag `v1.1.0` is unchanged.
+
+### Security
+
+- `pack --check` and `install` recompute `self.id`, `self.name`, `self.description`, and skill names from the archived tree and reject a sidecar that disagrees. `content_digest` does not cover the sidecar, so rewriting those fields is not a valid pack.
+
 ## [1.1.0] - 2026-09-25
 
 Compatible pack-contract release. Schema 1, JSON envelopes, and the seven MCP
@@ -25,7 +33,6 @@ tools are unchanged.
 ### Security
 
 - `pack --check` and `install` fail closed on path escape, planted `.git`, symlinks, secret hits, policy oversize, digest mismatch, and a specialist archive that still contains `identity/user.md` or `memory/daily/*`.
-- `pack --check` and `install` recompute `self.id`, `self.name`, `self.description`, and skill names from the archived tree and reject a sidecar that disagrees. The content digest does not cover the sidecar, so a rewritten sidecar is not accepted.
 
 ## [1.0.0] - 2026-08-17
 
@@ -171,7 +178,8 @@ First public release candidate of the safety-hardened deterministic core.
   the displayed class of mutation only.
 - Compact local-state layout is not migrated from pre-RC development checkouts.
 
-[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.1.1
 [1.1.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.1.0
 [1.0.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.0.0
 [0.2.0rc1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v0.2.0rc1

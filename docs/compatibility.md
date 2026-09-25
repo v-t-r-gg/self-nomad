@@ -40,7 +40,8 @@ schema_version, command, ok, result, warnings, errors
 - 1.1.0 keeps this format id. It adds fail-closed checks, LF text
   normalization, `packer_version`, and a specialist-only `memory/PUBLISH.md`
   allow-list. It does not add hub commands or a second pack format.
-  See [snapshot.md](snapshot.md).
+  1.1.1 rejects a sidecar whose self id, name, description, or skill names
+  disagree with the archived tree. See [snapshot.md](snapshot.md).
 
 ## Adapters
 

@@ -37,6 +37,7 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | [Adapter authoring](adapter-authoring.md) | Implementing another runtime adapter |
 | [Contributing](../CONTRIBUTING.md) | Local verification and PR expectations |
 | [Releasing](releasing.md) | Version-agnostic release procedure |
+| [1.1.1 notes](releases/1.1.1.md) | Sidecar identity check |
 | [1.1.0 notes](releases/1.1.0.md) | Pack-contract release notes |
 | [1.0.0 notes](releases/1.0.0.md) | Stable release notes |
 | [ADRs](decisions/) | Historical design decisions |

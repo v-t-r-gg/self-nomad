@@ -23,7 +23,7 @@ branch advancement under operator control.
 
 ## Development status
 
-**Version `1.1.0`**. Schema 1 and the 1.0 contracts stay frozen. The deterministic core supports:
+**Version `1.1.1`**. Schema 1 and the 1.0 contracts stay frozen. The deterministic core supports:
 
 - Repository init and structural validation
 - Isolated Git proposals (materialize → validate → approve → apply)
