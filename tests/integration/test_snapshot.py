@@ -72,18 +72,34 @@ def test_personal_pack_keeps_memory_and_user(tmp_path: Path) -> None:
     assert "identity/user.md" in names
     assert "memory/MEMORY.md" in names
     assert summary.omitted == []
-    SelfNomad.check_pack(archive)
+    SelfNomad.check_pack(archive, profile="personal")
+    with pytest.raises(PackError, match="profile"):
+        SelfNomad.check_pack(archive)
 
 
-def test_specialist_can_allow_long_term_memory(tmp_path: Path) -> None:
+def test_specialist_can_allow_shareable_long_term_memory(tmp_path: Path) -> None:
     app = _agent_with_skill(tmp_path)
+    (app.repository.root / "memory" / "PUBLISH.md").write_text(
+        "# Publishable\n\n- A shareable fact.\n",
+        encoding="utf-8",
+    )
     archive = tmp_path / "facts.snpack"
     summary = app.pack(archive, profile="specialist", include_long_term_memory=True)
     names = _names(archive)
-    assert "memory/MEMORY.md" in names
+    assert "memory/PUBLISH.md" in names
+    assert "memory/MEMORY.md" not in names
     assert "identity/user.md" not in names
     assert "long_term_memory" not in summary.omitted
     assert "user_profile" in summary.omitted
+    checked = SelfNomad.check_pack(archive)
+    assert checked.content_digest == summary.content_digest
+
+
+def test_specialist_long_term_refuses_dump_without_publish_file(tmp_path: Path) -> None:
+    app = _agent_with_skill(tmp_path)
+    (app.repository.root / "memory" / "PUBLISH.md").unlink()
+    with pytest.raises(PackError, match="PUBLISH.md"):
+        app.pack(tmp_path / "facts.snpack", profile="specialist", include_long_term_memory=True)
 
 
 def test_check_pack_rejects_digest_mismatch(tmp_path: Path) -> None:

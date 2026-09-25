@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-25
+
+Compatible pack-contract release. Schema 1, JSON envelopes, and the seven MCP
+tools are unchanged.
+
+### Added
+
+- Pack sidecar JSON Schema (`self-nomad-pack-v1`) and `packer_version` on `self-nomad.pack.json`.
+- `pack --check --json` reports profile, omitted classes, content digest, skill names, and packer version.
+- `pack --list` reads the sidecar and member names without extracting the tree.
+- Specialist `--include-long-term-memory` packs only `memory/PUBLISH.md`. `init` writes that stub. `memory/MEMORY.md` is not a specialist member.
+- Archive member, count, and uncompressed-size caps. UTF-8 text is stored with LF newlines so `content_digest` does not depend on the working tree's newline style.
+- Operator acceptance covers pack, check, install, and restore into Hermes and OpenClaw from an installed wheel.
+- [docs/snapshot.md](docs/snapshot.md).
+
+### Security
+
+- `pack --check` and `install` fail closed on path escape, planted `.git`, symlinks, secret hits, policy oversize, digest mismatch, and a specialist archive that still contains `identity/user.md` or `memory/daily/*`.
+
 ## [1.0.0] - 2026-08-17
 
 First stable release. Schema 1, CLI `--json` envelopes, and the seven-tool
@@ -151,7 +170,8 @@ First public release candidate of the safety-hardened deterministic core.
   the displayed class of mutation only.
 - Compact local-state layout is not migrated from pre-RC development checkouts.
 
-[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/v-t-r-gg/self-nomad/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.1.0
 [1.0.0]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v1.0.0
 [0.2.0rc1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v0.2.0rc1
 [0.1.0rc1]: https://github.com/v-t-r-gg/self-nomad/releases/tag/v0.1.0rc1

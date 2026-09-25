@@ -1,0 +1,134 @@
+{
+  "$defs": {
+    "PackIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "PackIdentity",
+      "type": "object"
+    },
+    "PackPolicyHighlights": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_default": {
+          "title": "Approval Default",
+          "type": "string"
+        },
+        "maximum_file_bytes": {
+          "title": "Maximum File Bytes",
+          "type": "integer"
+        },
+        "scan_for_secrets": {
+          "title": "Scan For Secrets",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approval_default",
+        "scan_for_secrets",
+        "maximum_file_bytes"
+      ],
+      "title": "PackPolicyHighlights",
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/v-t-r-gg/self-nomad/schemas/self-nomad-pack-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Additive self-nomad.pack.json sidecar for a self-nomad-pack-v1 archive. It does not widen repository schema_version 1. License, authors, package version, and namespace are not fields of this object.",
+  "properties": {
+    "content_digest": {
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "omitted": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Omitted",
+      "type": "array"
+    },
+    "pack_format": {
+      "const": "self-nomad-pack-v1",
+      "default": "self-nomad-pack-v1",
+      "title": "Pack Format",
+      "type": "string"
+    },
+    "packer_version": {
+      "title": "Packer Version",
+      "type": "string"
+    },
+    "policy": {
+      "$ref": "#/$defs/PackPolicyHighlights"
+    },
+    "profile": {
+      "enum": [
+        "specialist",
+        "personal"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "self": {
+      "$ref": "#/$defs/PackIdentity"
+    },
+    "skill_format": {
+      "title": "Skill Format",
+      "type": "string"
+    },
+    "skills": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Skills",
+      "type": "array"
+    }
+  },
+  "required": [
+    "profile",
+    "self",
+    "skill_format",
+    "policy",
+    "content_digest",
+    "packer_version",
+    "created_at"
+  ],
+  "title": "self-nomad pack sidecar v1",
+  "type": "object"
+}

@@ -38,4 +38,5 @@ class PackSummary(BaseModel):
     omitted: list[str] = Field(default_factory=list)
     policy: PackPolicyHighlights
     content_digest: str
+    packer_version: str
     created_at: datetime

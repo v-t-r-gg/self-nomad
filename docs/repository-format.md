@@ -91,4 +91,6 @@ Shareable snapshots versus a personal working tree are defined in
 [ADR 0007](decisions/0007-publishable-package-profile.md); schema 1 does not
 grow license, author, or package-version fields without that kind of decision.
 `self-nomad pack` writes an additive `self-nomad.pack.json` sidecar inside the
-archive; it is not part of the repository schema.
+archive; it is not part of the repository schema. Specialist packs may include
+`memory/PUBLISH.md` instead of `memory/MEMORY.md`. The digest and profile rules
+are in [snapshot.md](snapshot.md).

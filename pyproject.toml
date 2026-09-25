@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "self-nomad"
-version = "1.0.0"
+version = "1.1.0"
 description = "Git-backed portability and change governance for persistent AI agents"
 readme = "README.md"
 requires-python = ">=3.11"

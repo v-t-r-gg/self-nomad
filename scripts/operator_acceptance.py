@@ -2,8 +2,10 @@
 """Operator acceptance on an installed (non-editable) wheel.
 
 Installs ``dist/self_nomad-*.whl`` into a fresh venv and exercises the
-operator loop: init, validate, propose, approve, apply, intake, restore
-preview, and validation of the frozen first-RC schema fixture.
+operator loop: init, validate, propose, approve, apply, intake, pack,
+pack --check, install, and restore into Hermes and OpenClaw directories.
+This is the stranger-machine path: the wheel is installed, not an editable
+checkout. ``scripts/stranger_machine.py`` calls this same entry point.
 
 Optional ``--previous-wheel`` installs that artifact first, creates a repo,
 then upgrades to the current wheel and re-validates (upgrade-path check).
@@ -232,19 +234,67 @@ def operator_loop(cli: Path, work: Path, env: dict[str, str]) -> None:
     )
     if installed_valid.get("valid") is not True:
         raise AcceptanceError(f"installed repo invalid: {installed_valid!r}")
-    installed_restore = _json(
-        cli,
-        env,
-        "--repo",
-        str(installed_root),
-        "restore",
-        "--adapter",
-        "openclaw",
-        "--to",
-        str(work / "installed-openclaw"),
-    )
-    if installed_restore.get("applied") is not False:
-        raise AcceptanceError(f"installed restore preview applied: {installed_restore!r}")
+    checked = _json(cli, env, "pack", "--check", str(archive), "--profile", "specialist")
+    for key in ("profile", "omitted", "content_digest", "skills"):
+        if key not in checked:
+            raise AcceptanceError(f"pack --check JSON missing {key}: {checked!r}")
+    if checked.get("profile") != "specialist":
+        raise AcceptanceError(f"pack --check profile: {checked!r}")
+    omitted = checked.get("omitted")
+    personal = ("user_profile", "daily_memory")
+    if not isinstance(omitted, list) or any(name not in omitted for name in personal):
+        raise AcceptanceError(f"specialist pack did not omit personal classes: {checked!r}")
+    if checked.get("content_digest") != packed.get("content_digest"):
+        raise AcceptanceError("pack --check digest does not match pack")
+    if (installed_root / "identity" / "user.md").exists():
+        raise AcceptanceError("specialist install kept identity/user.md")
+    if (installed_root / "memory" / "daily").exists():
+        raise AcceptanceError("specialist install kept memory/daily")
+    persona = (installed_root / "identity" / "persona.md").read_bytes()
+    instructions = (installed_root / "identity" / "instructions.md").read_bytes()
+    for adapter, target in (
+        ("hermes", work / "hermes-home"),
+        ("openclaw", work / "openclaw-workspace"),
+    ):
+        preview = _json(
+            cli,
+            env,
+            "--repo",
+            str(installed_root),
+            "restore",
+            "--adapter",
+            adapter,
+            "--to",
+            str(target),
+        )
+        if preview.get("applied") is not False:
+            raise AcceptanceError(f"{adapter} restore preview applied: {preview!r}")
+        plan = preview.get("plan")
+        if not isinstance(plan, dict):
+            raise AcceptanceError(f"{adapter} restore missing plan: {preview!r}")
+        encoded = json.dumps(plan)
+        if "adapted" not in encoded and "unsupported" not in encoded:
+            raise AcceptanceError(f"{adapter} plan dropped adapted or unmapped classes: {plan!r}")
+        applied = _json(
+            cli,
+            env,
+            "--repo",
+            str(installed_root),
+            "restore",
+            "--adapter",
+            adapter,
+            "--to",
+            str(target),
+            "--yes",
+        )
+        if applied.get("applied") is not True:
+            raise AcceptanceError(f"{adapter} restore failed: {applied!r}")
+    if (work / "hermes-home" / "SOUL.md").read_bytes() != persona:
+        raise AcceptanceError("Hermes SOUL.md does not match packed persona")
+    if (work / "openclaw-workspace" / "SOUL.md").read_bytes() != persona:
+        raise AcceptanceError("OpenClaw SOUL.md does not match packed persona")
+    if (work / "openclaw-workspace" / "AGENTS.md").read_bytes() != instructions:
+        raise AcceptanceError("OpenClaw AGENTS.md does not match packed instructions")
 
 
 def validate_upgrade_fixture(cli: Path, work: Path, env: dict[str, str]) -> None:

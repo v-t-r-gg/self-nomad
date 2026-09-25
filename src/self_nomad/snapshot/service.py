@@ -30,6 +30,13 @@ from self_nomad.snapshot.models import (
 
 SPECIALIST_OMIT_ALWAYS = ("user_profile", "daily_memory")
 LONG_TERM_FIELD = "long_term_memory"
+SHAREABLE_LONG_TERM = "memory/PUBLISH.md"
+DUMP_LONG_TERM = "memory/MEMORY.md"
+# Absolute ceilings for untrusted archives. Independent of repository policy
+# so a crafted tar cannot expand the validator without bound.
+ARCHIVE_MAX_MEMBERS = 4096
+ARCHIVE_MAX_MEMBER_BYTES = 8 * 1024 * 1024
+ARCHIVE_MAX_TOTAL_BYTES = 64 * 1024 * 1024
 
 
 class SnapshotService:
@@ -50,7 +57,13 @@ class SnapshotService:
             )
         omitted = _omitted_fields(profile, include_long_term_memory=include_long_term_memory)
         original = self.repository.load_manifest()
-        export = _export_manifest(original, omitted)
+        export = _export_manifest(
+            original,
+            omitted,
+            source_root=self.repository.root,
+            profile=profile,
+            include_long_term_memory=include_long_term_memory,
+        )
         staging = Path(tempfile.mkdtemp(prefix="self-nomad-pack-"))
         try:
             _stage_export(self.repository.root, staging, export)
@@ -71,6 +84,7 @@ class SnapshotService:
                 summary.model_dump_json(indent=2) + "\n",
                 encoding="utf-8",
             )
+            _assert_archive_budget(staging)
             _write_archive(staging, destination)
             return summary
         finally:
@@ -90,6 +104,7 @@ def _opened_pack(archive: Path) -> Iterator[tuple[Path, PackSummary]]:
         if not sidecar.is_file():
             raise PackError(f"pack is missing {PACK_SIDECAR}")
         summary = PackSummary.model_validate_json(sidecar.read_text(encoding="utf-8"))
+        _assert_profile_closure(staging, summary)
         validation = SelfRepository(staging).validate(strict=True)
         if not validation.valid:
             raise ValidationFailedError(
@@ -102,9 +117,41 @@ def _opened_pack(archive: Path) -> Iterator[tuple[Path, PackSummary]]:
         shutil.rmtree(staging, ignore_errors=True)
 
 
-def check_pack(archive: Path) -> PackSummary:
+def check_pack(archive: Path, *, profile: str = "specialist") -> PackSummary:
+    """Verify an archive. Personal packs pass only when ``profile="personal"``."""
+    if profile not in ("specialist", "personal"):
+        raise ConflictError("profile must be specialist or personal")
     with _opened_pack(archive) as (_staging, summary):
+        if summary.profile != profile:
+            raise PackError(
+                f"pack profile is {summary.profile}; "
+                f"pass profile {summary.profile!r} to accept it"
+            )
         return summary
+
+
+def list_pack(archive: Path) -> tuple[PackSummary, list[str]]:
+    """Read the sidecar and member names without writing the tree."""
+    if not archive.is_file():
+        raise PackError(f"pack not found: {archive}")
+    sidecar_bytes: bytes | None = None
+    names: list[str] = []
+    try:
+        with tarfile.open(archive, "r:gz") as handle:
+            for member in _checked_members(handle):
+                names.append(member.name)
+                if member.name == PACK_SIDECAR and member.isfile():
+                    extracted = handle.extractfile(member)
+                    if extracted is None:
+                        raise PackError(f"pack member cannot be read: {member.name}")
+                    sidecar_bytes = extracted.read(ARCHIVE_MAX_MEMBER_BYTES + 1)
+                    if len(sidecar_bytes) > ARCHIVE_MAX_MEMBER_BYTES:
+                        raise PackError(f"pack member exceeds size cap: {member.name}")
+    except tarfile.TarError as exc:
+        raise PackError(f"pack is not a readable gzip tar: {exc}") from exc
+    if sidecar_bytes is None:
+        raise PackError(f"pack is missing {PACK_SIDECAR}")
+    return PackSummary.model_validate_json(sidecar_bytes), names
 
 
 def install_pack(
@@ -158,11 +205,64 @@ def _omitted_fields(profile: PackProfile, *, include_long_term_memory: bool) -> 
     return tuple(omitted)
 
 
-def _export_manifest(original: Manifest, omitted: tuple[str, ...]) -> Manifest:
+def _export_manifest(
+    original: Manifest,
+    omitted: tuple[str, ...],
+    *,
+    source_root: Path,
+    profile: PackProfile,
+    include_long_term_memory: bool,
+) -> Manifest:
     content = original.content.model_copy()
     for field in omitted:
         setattr(content, field, None)
+    if profile == "specialist" and include_long_term_memory:
+        shareable = source_root / SHAREABLE_LONG_TERM
+        if not shareable.is_file() or shareable.is_symlink():
+            raise PackError(
+                "specialist --include-long-term-memory requires "
+                f"{SHAREABLE_LONG_TERM}; memory/MEMORY.md is not packed"
+            )
+        content.long_term_memory = SHAREABLE_LONG_TERM
     return original.model_copy(update={"content": content})
+
+
+def _normalized_bytes(data: bytes) -> bytes:
+    """UTF-8 text is stored with LF newlines. Non-text bytes are unchanged.
+
+    Digest stability does not depend on the host's newline convention.
+    """
+    if b"\0" in data:
+        return data
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+
+
+def _copy_normalized_file(source: Path, destination: Path) -> None:
+    if source.is_symlink() or not source.is_file():
+        raise PackError(f"refusing to pack special file: {source.name}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(_normalized_bytes(source.read_bytes()))
+
+
+def _copy_normalized_tree(source: Path, destination: Path) -> None:
+    if source.is_symlink() or not source.is_dir():
+        raise PackError(f"refusing to pack special file: {source.name}")
+    destination.mkdir(parents=True, exist_ok=True)
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        target = destination / relative
+        if path.is_symlink():
+            raise PackError(f"refusing to pack special file: {relative.as_posix()}")
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        if not path.is_file():
+            raise PackError(f"refusing to pack special file: {relative.as_posix()}")
+        _copy_normalized_file(path, target)
 
 
 def _stage_export(source_root: Path, staging: Path, export: Manifest) -> None:
@@ -170,10 +270,9 @@ def _stage_export(source_root: Path, staging: Path, export: Manifest) -> None:
         source = contained_path(source_root, relative, must_exist=True)
         destination = staging / relative
         if source.is_dir():
-            shutil.copytree(source, destination, symlinks=False)
+            _copy_normalized_tree(source, destination)
         else:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, destination)
+            _copy_normalized_file(source, destination)
     (staging / "self-nomad.yaml").write_text(_dump_manifest(export), encoding="utf-8")
 
 
@@ -211,8 +310,15 @@ def _build_summary(
             maximum_file_bytes=policy.limits.maximum_file_bytes,
         ),
         content_digest=digest,
+        packer_version=_packer_version(),
         created_at=datetime.now(UTC),
     )
+
+
+def _packer_version() -> str:
+    from self_nomad import __version__
+
+    return __version__
 
 
 def _skill_names(root: Path, skills_relative: str | None) -> list[str]:
@@ -265,8 +371,7 @@ def _write_archive(staging: Path, destination: Path) -> None:
 def _extract_archive(archive: Path, destination: Path) -> None:
     try:
         with tarfile.open(archive, "r:gz") as handle:
-            for member in handle.getmembers():
-                _assert_safe_member(member)
+            for member in _checked_members(handle):
                 target = destination / member.name
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
@@ -275,19 +380,103 @@ def _extract_archive(archive: Path, destination: Path) -> None:
                 if extracted is None:
                     raise PackError(f"pack member cannot be read: {member.name}")
                 target.parent.mkdir(parents=True, exist_ok=True)
+                remaining = member.size
                 with extracted, target.open("wb") as output:
-                    shutil.copyfileobj(extracted, output)
+                    while remaining > 0:
+                        chunk = extracted.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        output.write(chunk)
+    except PackError:
+        raise
     except tarfile.TarError as exc:
         raise PackError(f"pack is not a readable gzip tar: {exc}") from exc
 
 
+def _checked_members(handle: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    members = handle.getmembers()
+    if len(members) > ARCHIVE_MAX_MEMBERS:
+        raise PackError(f"pack has {len(members)} members; limit is {ARCHIVE_MAX_MEMBERS}")
+    seen: set[str] = set()
+    total = 0
+    for member in members:
+        _assert_safe_member(member)
+        if member.name in seen:
+            raise PackError(f"pack contains a duplicate path: {member.name}")
+        seen.add(member.name)
+        if not member.isfile():
+            continue
+        size = member.size
+        if size < 0 or size > ARCHIVE_MAX_MEMBER_BYTES:
+            raise PackError(f"pack member exceeds size cap: {member.name} ({size} bytes)")
+        total += size
+        if total > ARCHIVE_MAX_TOTAL_BYTES:
+            raise PackError(
+                f"pack exceeds uncompressed size cap ({ARCHIVE_MAX_TOTAL_BYTES} bytes)"
+            )
+    return members
+
+
+def _assert_archive_budget(staging: Path) -> None:
+    files = [path for path in staging.rglob("*") if path.is_file()]
+    if len(files) > ARCHIVE_MAX_MEMBERS:
+        raise PackError(f"pack has {len(files)} members; limit is {ARCHIVE_MAX_MEMBERS}")
+    total = 0
+    for path in files:
+        size = path.stat().st_size
+        if size > ARCHIVE_MAX_MEMBER_BYTES:
+            raise PackError(f"pack member exceeds size cap: {path.name} ({size} bytes)")
+        total += size
+        if total > ARCHIVE_MAX_TOTAL_BYTES:
+            raise PackError(
+                f"pack exceeds uncompressed size cap ({ARCHIVE_MAX_TOTAL_BYTES} bytes)"
+            )
+
+
+def _assert_profile_closure(staging: Path, summary: PackSummary) -> None:
+    if summary.profile != "specialist":
+        return
+    for required in SPECIALIST_OMIT_ALWAYS:
+        if required not in summary.omitted:
+            raise PackError(f"specialist pack must omit {required}")
+    manifest = SelfRepository(staging).load_manifest()
+    if manifest.content.user_profile or manifest.content.daily_memory:
+        raise PackError("specialist pack must omit user_profile and daily_memory")
+    files = [
+        path.relative_to(staging).as_posix()
+        for path in staging.rglob("*")
+        if path.is_file()
+    ]
+    for relative in files:
+        if (
+            relative == "identity/user.md"
+            or relative == DUMP_LONG_TERM
+            or relative == "memory/daily"
+            or relative.startswith("memory/daily/")
+        ):
+            raise PackError(f"specialist pack contains forbidden path: {relative}")
+    if LONG_TERM_FIELD in summary.omitted:
+        if manifest.content.long_term_memory or SHAREABLE_LONG_TERM in files:
+            raise PackError("specialist pack includes long-term memory that was not requested")
+        return
+    if manifest.content.long_term_memory != SHAREABLE_LONG_TERM:
+        raise PackError(f"specialist long-term memory must be {SHAREABLE_LONG_TERM}")
+    if SHAREABLE_LONG_TERM not in files:
+        raise PackError(f"specialist pack is missing {SHAREABLE_LONG_TERM}")
+
+
 def _assert_safe_member(member: tarfile.TarInfo) -> None:
     name = member.name.replace("\\", "/")
+    if not name or name in {".", "./"}:
+        raise PackError(f"pack contains an unsafe path: {member.name}")
     if name.startswith("/") or name.startswith("../") or "/../" in f"/{name}/":
         raise PackError(f"pack contains an unsafe path: {member.name}")
     parts = PurePosixPath(name).parts
-    if ".." in parts or (parts and parts[0] == "/"):
+    if not parts or ".." in parts or "." in parts or parts[0] == "/":
         raise PackError(f"pack contains an unsafe path: {member.name}")
+    if any(part == ".git" for part in parts):
+        raise PackError(f"pack contains Git history: {member.name}")
     if member.issym() or member.islnk():
         raise PackError(f"pack contains a link: {member.name}")
     if not (member.isfile() or member.isdir()):

@@ -40,13 +40,15 @@ self-nomad about
 | --- | --- |
 | Purpose | Write a history-free snapshot, or verify one with `--check` |
 | Mutation | Writes `--out` (pack). `--check` is read-only |
-| Arguments | `--out`, `--profile specialist\|personal` (default specialist), `--include-long-term-memory`, `--check PATH` |
-| JSON | Yes |
+| Arguments | `--out`, `--profile specialist\|personal` (default specialist), `--include-long-term-memory`, `--check PATH`, `--list PATH` |
+| JSON | Yes. `--check` result includes `profile`, `omitted`, `content_digest`, `skills`, `packer_version` |
 
 Specialist packs omit `user_profile` and daily memory. Long-term memory is
-omitted unless `--include-long-term-memory`. The archive is gzip tar, not a
-Git clone. Sidecar `self-nomad.pack.json` is additive and does not change
-repository schema 1.
+omitted unless `--include-long-term-memory`, and then only `memory/PUBLISH.md`
+is packed — not `memory/MEMORY.md`. `pack --check` accepts a personal archive
+only with `--profile personal`. The archive is gzip tar, not a Git clone.
+Sidecar `self-nomad.pack.json` is additive and does not change repository
+schema 1. See [snapshot.md](snapshot.md).
 
 ```bash
 self-nomad --repo ./agent pack --out ./agent.snpack

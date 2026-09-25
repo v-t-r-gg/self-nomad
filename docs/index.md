@@ -24,8 +24,9 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | [MCP integration](mcp.md) | Local stdio server and host configs |
 | [Security / threat model](threat-model.md) | Trust boundaries and residual risks |
 | [Troubleshooting](troubleshooting.md) | Common failures and recovery |
-| [Upgrading](upgrading.md) | Moving to 1.0 |
+| [Upgrading](upgrading.md) | Moving to 1.1 |
 | [Compatibility](compatibility.md) | Frozen 1.0 contracts |
+| [Snapshot packs](snapshot.md) | Pack format, profiles, digest, threat cases |
 
 ## Develop and extend
 
@@ -36,6 +37,7 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 | [Adapter authoring](adapter-authoring.md) | Implementing another runtime adapter |
 | [Contributing](../CONTRIBUTING.md) | Local verification and PR expectations |
 | [Releasing](releasing.md) | Version-agnostic release procedure |
+| [1.1.0 notes](releases/1.1.0.md) | Pack-contract release notes |
 | [1.0.0 notes](releases/1.0.0.md) | Stable release notes |
 | [ADRs](decisions/) | Historical design decisions |
 | [Ecosystem position](ecosystem.md) | Standalone product vs a future registry |
@@ -48,6 +50,7 @@ Source code, CLI help, Pydantic models, schemas, and tests are authoritative.
 ### Schemas and examples
 
 - [ProposalRequest JSON Schema](schema/proposal-request-v1.schema.json)
+- [Pack sidecar JSON Schema](schema/self-nomad-pack-v1.schema.json)
 - [Intake examples](../examples/intake/)
 - [MCP host examples](../examples/mcp/)
 - [End-to-end intake walkthrough](../examples/e2e/README.md)

@@ -17,6 +17,7 @@ from self_nomad.branding import print_help_identity
 from self_nomad.domain import FileOperation, RuntimeRef
 from self_nomad.errors import (
     AmbiguousRuntimeError,
+    ConflictError,
     IntakeError,
     RepositoryNotFoundError,
     SelfNomadError,
@@ -314,14 +315,38 @@ def pack(
         bool, typer.Option("--include-long-term-memory")
     ] = False,
     check: Annotated[Path | None, typer.Option("--check")] = None,
+    list_archive: Annotated[Path | None, typer.Option("--list")] = None,
 ) -> None:
     """Write or verify a history-free snapshot pack."""
     try:
+        if check is not None and list_archive is not None:
+            raise ConflictError("pass only one of --check or --list")
+        if list_archive is not None:
+            summary, names = SelfNomad.list_pack(list_archive)
+            payload: dict[str, object] = {
+                "path": str(list_archive.resolve()),
+                "profile": summary.profile,
+                "omitted": summary.omitted,
+                "content_digest": summary.content_digest,
+                "skills": summary.skills,
+                "packer_version": summary.packer_version,
+                "members": names,
+                "summary": summary.model_dump(mode="json"),
+            }
+            emit("pack", True, payload)
+            if not state.json_output:
+                render_pack(console, path=list_archive, summary=summary)
+            return
         if check is not None:
-            summary = SelfNomad.check_pack(check)
+            summary = SelfNomad.check_pack(check, profile=profile)
             payload = {
                 "valid": True,
                 "path": str(check.resolve()),
+                "profile": summary.profile,
+                "omitted": summary.omitted,
+                "content_digest": summary.content_digest,
+                "skills": summary.skills,
+                "packer_version": summary.packer_version,
                 "summary": summary.model_dump(mode="json"),
             }
             emit("pack", True, payload)

@@ -198,16 +198,27 @@ def check_mcp_tools(files: list[Path], expected: tuple[str, ...]) -> list[str]:
 
 def check_schemas() -> list[str]:
     errors: list[str] = []
-    packaged = SRC / "self_nomad" / "schemas" / "proposal-request-v1.schema.json"
-    docs_copy = DOCS / "schema" / "proposal-request-v1.schema.json"
-    if not packaged.is_file():
-        errors.append(f"missing packaged schema: {packaged.relative_to(ROOT)}")
-        return errors
-    if not docs_copy.is_file():
-        errors.append(f"missing docs schema: {docs_copy.relative_to(ROOT)}")
-        return errors
-    if packaged.read_bytes() != docs_copy.read_bytes():
-        errors.append("packaged and docs ProposalRequest schemas differ")
+    pairs = (
+        (
+            "ProposalRequest",
+            SRC / "self_nomad" / "schemas" / "proposal-request-v1.schema.json",
+            DOCS / "schema" / "proposal-request-v1.schema.json",
+        ),
+        (
+            "pack sidecar",
+            SRC / "self_nomad" / "schemas" / "self-nomad-pack-v1.schema.json",
+            DOCS / "schema" / "self-nomad-pack-v1.schema.json",
+        ),
+    )
+    for label, packaged, docs_copy in pairs:
+        if not packaged.is_file():
+            errors.append(f"missing packaged schema: {packaged.relative_to(ROOT)}")
+            continue
+        if not docs_copy.is_file():
+            errors.append(f"missing docs schema: {docs_copy.relative_to(ROOT)}")
+            continue
+        if packaged.read_bytes() != docs_copy.read_bytes():
+            errors.append(f"packaged and docs {label} schemas differ")
     return errors
 
 

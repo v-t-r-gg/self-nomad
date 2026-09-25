@@ -41,8 +41,9 @@ would be treated as a public package.
    authoritative artifacts plus a machine-readable summary (identity, skill
    names, policy highlights, content digest). Import writes a new local
    repository and validates before the tree is trusted. Author `.git` history
-   is not the default package. These commands are not implemented in the
-   current slice.
+   is not the default package. The commands are `self-nomad pack`,
+   `self-nomad pack --check`, `self-nomad install`,
+   `self-nomad validate --strict`, and `self-nomad restore`.
 
 4. **Personal self and specialist package are different publish sets.** The
    default repository remains a personal agent self. A specialist snapshot
@@ -75,10 +76,9 @@ would be treated as a public package.
 - Contributors treat [docs/future/](../future/) as out-of-product notes, not
   a backlog for this CLI. The registry product lives at
   [v-t-r-gg/portable-agent-registry](https://github.com/v-t-r-gg/portable-agent-registry).
-- Finish the local product (intake, MCP, documentation) before adding export
-  and import snapshot commands.
-- When those commands exist, a registry CI job should call them rather than
-  reimplement validation.
+- `pack`, `pack --check`, `install`, `validate --strict`, and `restore` are
+  the registry-facing commands. A registry CI job calls them rather than
+  reimplementing validation.
 - Sharing a live working clone remains a manual, operator-trusted path and is
   not a publishable package.
 

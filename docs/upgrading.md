@@ -1,14 +1,16 @@
 # Upgrading
 
-Guidance for moving to **1.0.0**. Historical notes remain in
+Guidance for moving to **1.1.0**. 1.1.0 keeps schema 1 and the 1.0 JSON and
+MCP contracts. Historical notes remain in
 [CHANGELOG.md](../CHANGELOG.md). Release notes:
+[releases/1.1.0.md](releases/1.1.0.md) and
 [releases/1.0.0.md](releases/1.0.0.md).
 
 ## Version and schema
 
 | Item | Value |
 | --- | --- |
-| Package version | `1.0.0` (from `pyproject.toml`) |
+| Package version | `1.1.0` (from `pyproject.toml`) |
 | Repository `schema_version` | **1** (unchanged) |
 | Pack format | `self-nomad-pack-v1` |
 | Source-tree version sentinel | `0+unknown` when not installed |
@@ -16,6 +18,10 @@ Guidance for moving to **1.0.0**. Historical notes remain in
 No repository format migration is required for schema 1 trees created under
 earlier releases. Policy files that omit `limits.maximum_request_bytes` still
 receive the 4 MiB default.
+
+From 1.0.0, rebuild specialist packs that used `--include-long-term-memory`.
+1.1.0 packs only `memory/PUBLISH.md` for that flag, and `pack --check` of a
+personal archive requires `--profile personal`.
 
 ## Operator loop
 

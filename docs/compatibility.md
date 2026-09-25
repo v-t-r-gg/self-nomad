@@ -37,6 +37,10 @@ schema_version, command, ok, result, warnings, errors
 - Specialist profile is the pack default.
 - `pack --check` and `install` validate `--strict` and compare
   `content_digest` before trusting the tree.
+- 1.1.0 keeps this format id. It adds fail-closed checks, LF text
+  normalization, `packer_version`, and a specialist-only `memory/PUBLISH.md`
+  allow-list. It does not add hub commands or a second pack format.
+  See [snapshot.md](snapshot.md).
 
 ## Adapters
 

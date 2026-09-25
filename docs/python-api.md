@@ -73,8 +73,9 @@ States: `draft` → `materialized` → `validated` → `approved` → `applied`
 ```python
 summary = app.pack(Path("/tmp/agent.snpack"), profile="specialist")
 print(summary.content_digest, summary.skills, summary.omitted)
-checked = SelfNomad.check_pack(Path("/tmp/agent.snpack"))
+checked = SelfNomad.check_pack(Path("/tmp/agent.snpack"))  # expects specialist
 assert checked.content_digest == summary.content_digest
+personal = SelfNomad.check_pack(Path("/tmp/personal.snpack"), profile="personal")
 installed, loaded = SelfNomad.install_pack(
     Path("/tmp/agent.snpack"), Path("/tmp/agent-copy")
 )

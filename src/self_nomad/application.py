@@ -62,10 +62,16 @@ class SelfNomad:
         raise ConflictError("profile must be specialist or personal")
 
     @staticmethod
-    def check_pack(archive: Path) -> "PackSummary":
+    def check_pack(archive: Path, *, profile: str = "specialist") -> "PackSummary":
         from self_nomad.snapshot.service import check_pack
 
-        return check_pack(archive)
+        return check_pack(archive, profile=profile)
+
+    @staticmethod
+    def list_pack(archive: Path) -> tuple["PackSummary", list[str]]:
+        from self_nomad.snapshot.service import list_pack
+
+        return list_pack(archive)
 
     @classmethod
     def install_pack(

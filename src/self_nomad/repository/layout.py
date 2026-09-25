@@ -3,15 +3,16 @@ from uuid import uuid4
 
 
 def manifest_template(name: str, description: str | None = None) -> str:
-    description_line = f'  description: "{description}"\n' if description else ""
-    return dedent(
+    # Description is inserted after dedent. Putting a shorter line inside the
+    # indented literal would shrink the common indent and break the document.
+    text = dedent(
         f'''\
         schema_version: 1
 
         self:
           id: "{uuid4()}"
           name: "{name}"
-        {description_line}content:
+        content:
           instructions: "identity/instructions.md"
           persona: "identity/persona.md"
           identity: "identity/identity.md"
@@ -33,6 +34,15 @@ def manifest_template(name: str, description: str | None = None) -> str:
           openclaw:
             enabled: true
         '''
+    )
+    if not description:
+        return text
+    if "\n" in description or '"' in description:
+        raise ValueError("description cannot contain quotes or newlines")
+    return text.replace(
+        f'  name: "{name}"\n',
+        f'  name: "{name}"\n  description: "{description}"\n',
+        1,
     )
 
 
@@ -65,5 +75,10 @@ ARTIFACT_TEMPLATES = {
     "identity/identity.md": "# Identity\n",
     "identity/user.md": "# User\n",
     "memory/MEMORY.md": "# Memory\n",
+    "memory/PUBLISH.md": (
+        "# Publishable memory\n\n"
+        "Facts copied here may be included in a specialist pack. "
+        "`memory/MEMORY.md` is a personal dump and is never packed as specialist.\n"
+    ),
     "tools/notes.md": "# Tool notes\n",
 }
