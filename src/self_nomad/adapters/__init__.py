@@ -1,3 +1,4 @@
+from self_nomad.adapters.agents_md import AgentsMdAdapter
 from self_nomad.adapters.base import RuntimeAdapter
 from self_nomad.adapters.example import ExampleFilesAdapter
 from self_nomad.adapters.hermes import HermesAdapter
@@ -6,11 +7,12 @@ from self_nomad.adapters.registry import AdapterRegistry
 
 
 def default_registry() -> AdapterRegistry:
-    return AdapterRegistry([HermesAdapter(), OpenClawAdapter()])
+    return AdapterRegistry([HermesAdapter(), OpenClawAdapter(), AgentsMdAdapter()])
 
 
 __all__ = [
     "AdapterRegistry",
+    "AgentsMdAdapter",
     "ExampleFilesAdapter",
     "HermesAdapter",
     "OpenClawAdapter",

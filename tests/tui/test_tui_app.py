@@ -72,6 +72,7 @@ async def test_detect_lists_registered_adapters(
         body = _text(application, "#detect-body")
     assert "hermes:" in body
     assert "openclaw:" in body
+    assert "agents-md:" in body
 
 
 async def test_import_review_approve_apply_on_clean_main(

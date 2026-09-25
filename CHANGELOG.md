@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agents-md` workspace adapter. `AGENTS.md` maps to instructions as adapted. `.env` and vendor state directories stay excluded. A README-only tree is not a candidate.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added

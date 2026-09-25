@@ -1,7 +1,8 @@
 # Upgrading
 
-Guidance for moving to **1.2.0**. 1.2.0 keeps schema 1, the 1.0 JSON and
-MCP contracts, and the 1.1 pack format. Historical notes remain in
+Guidance for moving to **1.3.0**. 1.3.0 keeps schema 1, the 1.0 JSON and
+MCP contracts, the 1.1 pack format, and the 1.2 TUI. `v1.2.0` stays the TUI
+tag. Historical notes remain in
 [CHANGELOG.md](../CHANGELOG.md). Release notes:
 [releases/1.2.0.md](releases/1.2.0.md),
 [releases/1.1.1.md](releases/1.1.1.md),
@@ -12,7 +13,7 @@ MCP contracts, and the 1.1 pack format. Historical notes remain in
 
 | Item | Value |
 | --- | --- |
-| Package version | `1.2.0` (from `pyproject.toml`) |
+| Package version | `1.3.0` (from `pyproject.toml`) |
 | Repository `schema_version` | **1** (unchanged) |
 | Pack format | `self-nomad-pack-v1` |
 | Source-tree version sentinel | `0+unknown` when not installed |

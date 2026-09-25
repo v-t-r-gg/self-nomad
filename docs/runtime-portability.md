@@ -1,11 +1,17 @@
-# Runtime portability (Hermes and OpenClaw)
+# Runtime portability
 
 Operator-facing guide for detection, import, restore, and exclusions.
 Adapter implementation details live in [adapter-authoring.md](adapter-authoring.md).
 
-Verified against the self-nomad adapters as of **2026-08-17**. Host layout
-conventions can change; re-check official Hermes/OpenClaw docs before production
-migrations.
+Two families stay separate. Hermes and OpenClaw are personal agent homes.
+`agents-md` is a project workspace. Claude-specific precedence is a different
+adapter.
+
+Hermes and OpenClaw layouts were verified against the self-nomad adapters as of
+**2026-08-17**. Host conventions can change; re-check official docs before
+production migrations. `agents-md` follows the AGENTS.md workspace convention.
+Claude Code 2.1.277 (2026-09-18) reads `AGENTS.md` when `CLAUDE.md` is absent;
+that precedence is not implemented by `agents-md`.
 
 ## Shared behavior
 
@@ -49,6 +55,37 @@ self-nomad --repo ./agent restore --adapter openclaw --to ~/.openclaw/workspace 
 
 Canonical paths come from `self-nomad.yaml` `content.*` fields (defaults shown
 in [repository-format.md](repository-format.md)).
+
+## agents-md (project workspace)
+
+**Detection:** the directory passed to `--path` / `--from`. A candidate needs
+`AGENTS.md` or a non-empty `skills/` tree. A README-only repository is not a
+candidate. The adapter does not scan the home directory.
+
+| Runtime file | Canonical | Fidelity |
+| --- | --- | --- |
+| `AGENTS.md` | `identity/instructions.md` | adapted |
+| `skills/` | `skills/` | exact |
+| `SOUL.md` | `identity/persona.md` | exact |
+| `IDENTITY.md` | `identity/identity.md` | exact |
+| `USER.md` | `identity/user.md` | exact |
+| `MEMORY.md` | `memory/MEMORY.md` | exact |
+| `TOOLS.md` | `tools/notes.md` | exact |
+| `memory/daily/` or a `memory/` tree of only `YYYY-MM-DD.md` notes | `memory/daily` | exact |
+
+A `memory/` directory that mixes a dump with other files is not treated as
+daily notes. It stays unmapped. Knowledge, workflows, and evaluations are
+always listed as unmapped.
+
+**Always excluded and reported:** `.env`, `.env.*`, `.claude/`, `.codex/`,
+`.cursor/`, `node_modules`, `.git`, session `*.db` files, and GitHub token
+files under `.github/` when those names appear. `AGENTS.md` is adapted, not a
+byte-identical copy of a runtime instruction format.
+
+```bash
+self-nomad --repo ./agent detect --adapter agents-md --path ./workspace
+self-nomad --repo ./agent import --adapter agents-md --from ./workspace
+```
 
 ## Hermes
 
